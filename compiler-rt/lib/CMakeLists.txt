@@ -54,6 +54,10 @@ if(COMPILER_RT_BUILD_PROFILE AND COMPILER_RT_HAS_PROFILE)
   compiler_rt_build_runtime(profile)
 endif()
 
+if(COMPILER_RT_BUILD_MIP AND COMPILER_RT_HAS_MIP)
+  compiler_rt_build_runtime(mip)
+endif()
+
 if(COMPILER_RT_BUILD_XRAY)
   compiler_rt_build_runtime(xray)
 endif()

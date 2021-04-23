@@ -403,6 +403,7 @@ if(APPLE)
 
   set(SANITIZER_COMMON_SUPPORTED_OS osx)
   set(PROFILE_SUPPORTED_OS osx)
+  set(MIP_SUPPORTED_OS osx)
   set(TSAN_SUPPORTED_OS osx)
   set(XRAY_SUPPORTED_OS osx)
   set(FUZZER_SUPPORTED_OS osx)
@@ -493,6 +494,7 @@ if(APPLE)
         if(DARWIN_${platform}sim_ARCHS)
           list(APPEND SANITIZER_COMMON_SUPPORTED_OS ${platform}sim)
           list(APPEND PROFILE_SUPPORTED_OS ${platform}sim)
+          list(APPEND MIP_SUPPORTED_OS ${platform}sim)
           list(APPEND TSAN_SUPPORTED_OS ${platform}sim)
           list(APPEND FUZZER_SUPPORTED_OS ${platform}sim)
           list(APPEND ORC_SUPPORTED_OS ${platform}sim)
@@ -523,6 +525,7 @@ if(APPLE)
         if(DARWIN_${platform}_ARCHS)
           list(APPEND SANITIZER_COMMON_SUPPORTED_OS ${platform})
           list(APPEND PROFILE_SUPPORTED_OS ${platform})
+          list(APPEND MIP_SUPPORTED_OS ${platform})
 
           list_intersect(DARWIN_${platform}_TSAN_ARCHS DARWIN_${platform}_ARCHS ALL_TSAN_SUPPORTED_ARCH)
           if(DARWIN_${platform}_TSAN_ARCHS)
@@ -579,6 +582,9 @@ if(APPLE)
   list_intersect(PROFILE_SUPPORTED_ARCH
     ALL_PROFILE_SUPPORTED_ARCH
     SANITIZER_COMMON_SUPPORTED_ARCH)
+  list_intersect(MIP_SUPPORTED_ARCH
+    ALL_MIP_SUPPORTED_ARCH
+    SANITIZER_COMMON_SUPPORTED_ARCH)
   list_intersect(TSAN_SUPPORTED_ARCH
     ALL_TSAN_SUPPORTED_ARCH
     SANITIZER_COMMON_SUPPORTED_ARCH)
@@ -629,6 +635,7 @@ else()
   filter_available_targets(HWASAN_SUPPORTED_ARCH ${ALL_HWASAN_SUPPORTED_ARCH})
   filter_available_targets(MEMPROF_SUPPORTED_ARCH ${ALL_MEMPROF_SUPPORTED_ARCH})
   filter_available_targets(PROFILE_SUPPORTED_ARCH ${ALL_PROFILE_SUPPORTED_ARCH})
+  filter_available_targets(MIP_SUPPORTED_ARCH ${ALL_MIP_SUPPORTED_ARCH})
   filter_available_targets(TSAN_SUPPORTED_ARCH ${ALL_TSAN_SUPPORTED_ARCH})
   filter_available_targets(UBSAN_SUPPORTED_ARCH ${ALL_UBSAN_SUPPORTED_ARCH})
   filter_available_targets(SAFESTACK_SUPPORTED_ARCH
@@ -754,6 +761,12 @@ if (PROFILE_SUPPORTED_ARCH AND NOT LLVM_USE_SANITIZER AND
   set(COMPILER_RT_HAS_PROFILE TRUE)
 else()
   set(COMPILER_RT_HAS_PROFILE FALSE)
+endif()
+
+if (MIP_SUPPORTED_ARCH AND OS_NAME MATCHES "Darwin|Linux|Android")
+  set(COMPILER_RT_HAS_MIP TRUE)
+else()
+  set(COMPILER_RT_HAS_MIP FALSE)
 endif()
 
 if (COMPILER_RT_HAS_SANITIZER_COMMON AND TSAN_SUPPORTED_ARCH)
