@@ -548,6 +548,12 @@ bool ToolChain::needsProfileRT(const ArgList &Args) {
          Args.hasArg(options::OPT_forder_file_instrumentation);
 }
 
+bool ToolChain::needsMachineProfileRT(const ArgList &Args) {
+  return Args.hasFlag(options::OPT_fmachine_profile_generate,
+                      options::OPT_fno_machine_profile_generate, false) &&
+         !Args.hasArg(options::OPT_fno_machine_profile_runtime);
+}
+
 bool ToolChain::needsGCovInstrumentation(const llvm::opt::ArgList &Args) {
   return Args.hasArg(options::OPT_coverage) ||
          Args.hasFlag(options::OPT_fprofile_arcs, options::OPT_fno_profile_arcs,
@@ -774,6 +780,14 @@ void ToolChain::addProfileRTLibs(const llvm::opt::ArgList &Args,
     return;
 
   CmdArgs.push_back(getCompilerRTArgString(Args, "profile"));
+}
+
+void ToolChain::addMachineProfileRTLibs(
+    const llvm::opt::ArgList &Args, llvm::opt::ArgStringList &CmdArgs) const {
+  if (!needsMachineProfileRT(Args))
+    return;
+
+  CmdArgs.push_back(getCompilerRTArgString(Args, "mip"));
 }
 
 ToolChain::RuntimeLibType ToolChain::GetRuntimeLibType(

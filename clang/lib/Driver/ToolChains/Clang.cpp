@@ -1005,6 +1005,109 @@ static void addPGOAndCoverageFlags(const ToolChain &TC, Compilation &C,
   }
 }
 
+static void addMachineProfileFlags(const Driver &D, const ArgList &Args,
+                                   ArgStringList &CmdArgs) {
+  // FIXME: Machine profile generation flags need to be added to linker args
+  //        when LTO is on.
+  if (!D.isUsingLTO()) {
+    bool HasMIPFlags = false;
+    if (Args.hasFlag(options::OPT_fmachine_profile_generate,
+                     options::OPT_fno_machine_profile_generate, false)) {
+      CmdArgs.push_back("-mllvm");
+      CmdArgs.push_back("-enable-machine-instrumentation");
+      // TODO: Add a tool to run `llvm-objcopy` and `llvm-mipdata` to fully
+      // extract and create an empty .mip file after the link step.
+      HasMIPFlags = true;
+    }
+
+    if (Arg *A = Args.getLastArg(options::OPT_fmachine_profile_use_EQ)) {
+      StringRef value = A->getValue();
+      CmdArgs.push_back("-mllvm");
+      CmdArgs.push_back(Args.MakeArgString("-machine-profile-use=" + value));
+      HasMIPFlags = true;
+    }
+
+    if (!HasMIPFlags)
+      return;
+
+    std::string LinkUnitName;
+    if (const Arg *A =
+            Args.getLastArg(options::OPT_fmachine_profile_link_unit_name_EQ)) {
+      LinkUnitName = A->getValue();
+    } else if (const Arg *A = Args.getLastArg(options::OPT_o)) {
+      LinkUnitName = A->getValue();
+    } else {
+      LinkUnitName = D.getDefaultImageName();
+    }
+    CmdArgs.push_back("-mllvm");
+    CmdArgs.push_back(Args.MakeArgString("-link-unit-name=" + LinkUnitName));
+
+    if (Args.hasFlag(options::OPT_fmachine_profile_function_coverage,
+                     options::OPT_fno_machine_profile_function_coverage,
+                     false)) {
+      CmdArgs.push_back("-mllvm");
+      CmdArgs.push_back("-enable-machine-function-coverage");
+    } else if (Args.hasFlag(options::OPT_fmachine_profile_call_graph,
+                            options::OPT_fno_machine_profile_call_graph,
+                            true)) {
+      CmdArgs.push_back("-mllvm");
+      CmdArgs.push_back("-enable-machine-call-graph");
+    }
+
+    if (Args.hasFlag(options::OPT_fmachine_profile_block_coverage,
+                     options::OPT_fno_machine_profile_block_coverage, false)) {
+      CmdArgs.push_back("-mllvm");
+      CmdArgs.push_back("-enable-machine-block-coverage");
+    }
+
+    if (const Arg *A =
+            Args.getLastArg(options::OPT_fmachine_profile_runtime_buffer_EQ)) {
+      StringRef S = A->getValue();
+      unsigned RuntimeBufferSize;
+      if (S.getAsInteger(0, RuntimeBufferSize))
+        D.Diag(clang::diag::err_drv_invalid_value) << A->getAsString(Args) << S;
+      CmdArgs.push_back("-mllvm");
+      CmdArgs.push_back(Args.MakeArgString("-machine-profile-runtime-buffer=" +
+                                           Twine(RuntimeBufferSize)));
+    }
+
+    unsigned GroupCount = 1;
+    if (const Arg *A = Args.getLastArg(
+            options::OPT_fmachine_profile_function_group_count_EQ)) {
+      StringRef S = A->getValue();
+      if (S.getAsInteger(0, GroupCount) || GroupCount < 1)
+        D.Diag(clang::diag::err_drv_invalid_value) << A->getAsString(Args) << S;
+      // TODO: Add these args in the linker if we are using LTO.
+      CmdArgs.push_back("-mllvm");
+      CmdArgs.push_back(Args.MakeArgString(
+          "-machine-profile-function-group-count=" + Twine(GroupCount)));
+    }
+
+    if (const Arg *A = Args.getLastArg(
+            options::OPT_fmachine_profile_selected_function_group_EQ)) {
+      unsigned SelectedGroup;
+      StringRef S = A->getValue();
+      if (S.getAsInteger(0, SelectedGroup) || SelectedGroup >= GroupCount)
+        D.Diag(clang::diag::err_drv_invalid_value) << A->getAsString(Args) << S;
+      CmdArgs.push_back("-mllvm");
+      CmdArgs.push_back(Args.MakeArgString(
+          "-machine-profile-selected-function-group=" + Twine(SelectedGroup)));
+    }
+
+    if (const Arg *A = Args.getLastArg(
+            options::OPT_fmachine_profile_min_instruction_count_EQ)) {
+      unsigned MinInstructionCount;
+      StringRef S = A->getValue();
+      if (S.getAsInteger(0, MinInstructionCount) || MinInstructionCount < 1)
+        D.Diag(clang::diag::err_drv_invalid_value) << A->getAsString(Args) << S;
+      CmdArgs.push_back("-mllvm");
+      CmdArgs.push_back(
+          Args.MakeArgString("-machine-profile-min-instruction-count=" +
+                             Twine(MinInstructionCount)));
+    }
+  }
+}
+
 /// Check whether the given input tree contains any compilation actions.
 static bool ContainsCompileAction(const Action *A) {
   if (isa<CompileJobAction>(A) || isa<BackendJobAction>(A))
@@ -5540,6 +5643,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   // no way to collect the output.
   if (!Triple.isNVPTX() && !Triple.isAMDGCN())
     addPGOAndCoverageFlags(TC, C, D, Output, Args, SanitizeArgs, CmdArgs);
+
+  addMachineProfileFlags(D, Args, CmdArgs);
 
   Args.AddLastArg(CmdArgs, options::OPT_fclang_abi_compat_EQ);
 

@@ -19,6 +19,7 @@
 #include "clang/Driver/Options.h"
 #include "clang/Driver/SanitizerArgs.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/MIP/MIP.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/ProfileData/InstrProf.h"
 #include "llvm/Support/Path.h"
@@ -659,6 +660,7 @@ void darwin::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-allow_stack_execute");
 
   getMachOToolChain().addProfileRTLibs(Args, CmdArgs);
+  getMachOToolChain().addMachineProfileRTLibs(Args, CmdArgs);
 
   StringRef Parallelism = getLTOParallelism(Args, getToolChain().getDriver());
   if (!Parallelism.empty()) {
@@ -1331,6 +1333,17 @@ void Darwin::addProfileRTLibs(const ArgList &Args,
                                         /*AddSegmentInfo=*/false));
     }
   }
+}
+
+void Darwin::addMachineProfileRTLibs(const ArgList &Args,
+                                     ArgStringList &CmdArgs) const {
+  if (!needsMachineProfileRT(Args))
+    return;
+
+  AddLinkRuntimeLib(Args, CmdArgs, "mip", RuntimeLinkOptions(RLO_AlwaysLink));
+
+  if (!Args.hasArg(options::OPT_fno_machine_profile_dump))
+    addExportedSymbol(CmdArgs, "_" MIP_RUNTIME_SYMBOL_NAME);
 }
 
 void DarwinClang::AddLinkSanitizerLibArgs(const ArgList &Args,

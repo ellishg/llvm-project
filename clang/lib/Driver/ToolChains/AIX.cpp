@@ -175,6 +175,8 @@ void aix::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   if (getToolChain().ShouldLinkCXXStdlib(Args))
     getToolChain().AddCXXStdlibLibArgs(Args, CmdArgs);
 
+  ToolChain.addMachineProfileRTLibs(Args, CmdArgs);
+
   if (!Args.hasArg(options::OPT_nostdlib, options::OPT_nodefaultlibs)) {
     AddRunTimeLibs(ToolChain, D, CmdArgs, Args);
 

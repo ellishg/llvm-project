@@ -14,6 +14,7 @@
 #include "clang/Driver/DriverDiagnostic.h"
 #include "clang/Driver/Options.h"
 #include "clang/Driver/SanitizerArgs.h"
+#include "llvm/MIP/MIP.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/ProfileData/InstrProf.h"
 #include "llvm/Support/FileSystem.h"
@@ -158,6 +159,7 @@ void fuchsia::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     addXRayRuntime(ToolChain, Args, CmdArgs);
 
     ToolChain.addProfileRTLibs(Args, CmdArgs);
+    ToolChain.addMachineProfileRTLibs(Args, CmdArgs);
 
     AddRunTimeLibs(ToolChain, D, CmdArgs, Args);
 

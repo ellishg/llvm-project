@@ -473,6 +473,9 @@ public:
   /// needsProfileRT - returns true if instrumentation profile is on.
   static bool needsProfileRT(const llvm::opt::ArgList &Args);
 
+  /// Returns true if machine profile instrumentation is on.
+  static bool needsMachineProfileRT(const llvm::opt::ArgList &Args);
+
   /// Returns true if gcov instrumentation (-fprofile-arcs or --coverage) is on.
   static bool needsGCovInstrumentation(const llvm::opt::ArgList &Args);
 
@@ -675,6 +678,11 @@ public:
   /// a suitable profile runtime library to the linker.
   virtual void addProfileRTLibs(const llvm::opt::ArgList &Args,
                                 llvm::opt::ArgStringList &CmdArgs) const;
+
+  /// addMachineProfileRTLibs - When -fmachine-profile-generate is specified,
+  /// try to pass a suitable profile runtime library to the linker.
+  virtual void addMachineProfileRTLibs(const llvm::opt::ArgList &Args,
+                                       llvm::opt::ArgStringList &CmdArgs) const;
 
   /// Add arguments to use system-specific CUDA includes.
   virtual void AddCudaIncludeArgs(const llvm::opt::ArgList &DriverArgs,

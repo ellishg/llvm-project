@@ -1250,6 +1250,46 @@ defm coverage_mapping : BoolFOption<"coverage-mapping",
   CodeGenOpts<"CoverageMapping">, DefaultFalse,
   PosFlag<SetTrue, [CC1Option], "Generate coverage mapping to enable code coverage analysis">,
   NegFlag<SetFalse, [], "Disable code coverage analysis">, BothFlags<[CoreOption]>>;
+
+def fmachine_profile_generate : Flag<["-"], "fmachine-profile-generate">, Group<f_Group>, Flags<[CC1Option]>,
+    HelpText<"Generate MIP instrumented code.">;
+def fno_machine_profile_generate : Flag<["-"], "fno-machine-profile-generate">, Group<f_Group>, Flags<[CC1Option]>,
+    HelpText<"Disable MIP instrumented code.">;
+def fmachine_profile_function_coverage : Flag<["-"], "fmachine-profile-function-coverage">, Group<f_Group>,
+    Flags<[CC1Option]>, HelpText<"Enable MIP machine function coverage instrumentation.">;
+def fno_machine_profile_function_coverage : Flag<["-"], "fno-machine-profile-function-coverage">, Group<f_Group>,
+    Flags<[CC1Option]>, HelpText<"Disable MIP machine function coverage instrumentation.">;
+def fmachine_profile_block_coverage : Flag<["-"], "fmachine-profile-block-coverage">, Group<f_Group>,
+    Flags<[CC1Option]>, HelpText<"Enable MIP machine basic block coverage instrumentation.">;
+def fno_machine_profile_block_coverage : Flag<["-"], "fno-machine-profile-block-coverage">, Group<f_Group>,
+    Flags<[CC1Option]>, HelpText<"Disable MIP machine basic block coverage instrumentation.">;
+def fmachine_profile_call_graph : Flag<["-"], "fmachine-profile-call-graph">, Group<f_Group>, Flags<[CC1Option]>,
+    HelpText<"Enable full MIP instrumentation. Cannot be used with -fmachine-profile-function-coverage.">;
+def fno_machine_profile_call_graph : Flag<["-"], "fno-machine-profile-call-graph">, Group<f_Group>, Flags<[CC1Option]>,
+    HelpText<"Disable full MIP instrumentation.">;
+def fmachine_profile_runtime_buffer_EQ : Joined<["-"], "fmachine-profile-runtime-buffer=">, Group<f_Group>,
+    Flags<[CC1Option]>, MetaVarName<"<RuntimeBufferSize>">,
+    HelpText<"Allocate a buffer of <RuntimeBufferSize> bytes to hold machine function call samples.">;
+def fmachine_profile_link_unit_name_EQ : Joined<["-"], "fmachine-profile-link-unit-name=">,
+    Group<f_Group>, Flags<[CC1Option]>, MetaVarName<"<LinkUnitName>">,
+    HelpText<"Use <LinkUnitName> to identify this link unit.">;
+def fno_machine_profile_runtime : Flag<["-"], "fno-machine-profile-runtime">, Group<f_Group>, Flags<[CC1Option, NoArgumentUnused]>,
+    HelpText<"Do not link the machine profile runtime.">;
+def fno_machine_profile_dump : Flag<["-"], "fno-machine-profile-dump">, Group<f_Group>, Flags<[CC1Option]>,
+    HelpText<"Do not dump a raw machine profile when the program exits.">;
+def fmachine_profile_function_group_count_EQ : Joined<["-"], "fmachine-profile-function-group-count=">, Group<f_Group>,
+    Flags<[CC1Option]>, MetaVarName<"<N>">,
+    HelpText<"Partition the machine functions into <N> groups and instrument the group specified by -fmachine-profile-selected-function-group.">;
+def fmachine_profile_selected_function_group_EQ : Joined<["-"], "fmachine-profile-selected-function-group=">,
+    Group<f_Group>, Flags<[CC1Option]>, MetaVarName<"<i>">,
+    HelpText<"Instrument only group <i>. Must be in the range [0, -fmachine-profile-function-group-count).">;
+def fmachine_profile_min_instruction_count_EQ : Joined<["-"], "fmachine-profile-min-instruction-count=">,
+    Group<f_Group>, Flags<[CC1Option]>, MetaVarName<"<N>">,
+    HelpText<"Do not instrument machine functions that have fewer than <N> instructions">;
+def fmachine_profile_use_EQ : Joined<["-"], "fmachine-profile-use=">,
+    Group<f_Group>, Flags<[CC1Option]>, MetaVarName<"<pathnames>">,
+    HelpText<"Use MIP profile data from <pathnames> for profile-guided optimization, where <pathnames> is a comma separated ordered list of .mip profiles.">;
+
 def fprofile_generate : Flag<["-"], "fprofile-generate">,
     Group<f_Group>, Flags<[CoreOption]>,
     HelpText<"Generate instrumented code to collect execution counts into default.profraw (overridden by LLVM_PROFILE_FILE env var)">;
