@@ -1,0 +1,3 @@
+; RUN: llvm-mipdata yaml2mip -p %t.mip %p/Inputs/function-coverage.yaml
+; RUN: llvm-mipdata mip2yaml -p %t.mip -o %t.yaml
+; RUN: diff %p/Inputs/function-coverage.yaml %t.yaml

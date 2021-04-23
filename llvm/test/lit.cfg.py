@@ -162,7 +162,7 @@ tools.extend([
     'llvm-diff', 'llvm-dis', 'llvm-dwarfdump', 'llvm-dlltool', 'llvm-exegesis',
     'llvm-extract', 'llvm-isel-fuzzer', 'llvm-ifs',
     'llvm-install-name-tool', 'llvm-jitlink', 'llvm-opt-fuzzer', 'llvm-lib',
-    'llvm-link', 'llvm-lto', 'llvm-lto2', 'llvm-mc', 'llvm-mca',
+    'llvm-link', 'llvm-lto', 'llvm-lto2', 'llvm-mc', 'llvm-mca', 'llvm-mipdata',
     'llvm-modextract', 'llvm-nm', 'llvm-objcopy', 'llvm-objdump', 'llvm-otool',
     'llvm-pdbutil', 'llvm-profdata', 'llvm-profgen', 'llvm-ranlib', 'llvm-rc', 'llvm-readelf',
     'llvm-readobj', 'llvm-remark-size-diff', 'llvm-rtdyld', 'llvm-sim',

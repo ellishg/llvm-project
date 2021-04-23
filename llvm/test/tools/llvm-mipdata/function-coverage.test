@@ -1,0 +1,6 @@
+; RUN: xxd -r %p/Inputs/function-coverage.mipmap.hex > %t.mipmap
+; RUN: xxd -r %p/Inputs/function-coverage.mipraw.hex > %t.mipraw
+; RUN: llvm-mipdata create -p %t.mip %t.mipmap
+; RUN: llvm-mipdata merge -p %t.mip %t.mipraw
+; RUN: llvm-mipdata mip2yaml -p %t.mip -o %t.yaml
+; RUN: diff %p/Inputs/function-coverage.yaml %t.yaml

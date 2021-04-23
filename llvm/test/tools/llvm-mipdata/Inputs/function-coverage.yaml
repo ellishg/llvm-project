@@ -1,0 +1,35 @@
+---
+Header:
+  File Type:       [ .mip ]
+  Profile Type:    [ Function Coverage ]
+  Module Hash:     0xDEADBEEF
+Profiles:
+  - Function Name:   foo
+    Function Signature: 0x5CF8C24CDB18BDAC
+    Raw Profile Data Address: 0x20
+    Encoded Function Address: 0x100
+    Function Size:   0x10
+    Control Flow Graph Signature: 0xE7715
+    Raw Profile Count: 1
+    Function Call Count: 1
+    Function Order Sum: 0
+    Basic Block Profiles:
+      - Offset:          0x0
+        Covered:         true
+      - Offset:          0x4
+        Covered:         false
+    Call Edges:      []
+  - Function Name:   main
+    Function Signature: 0xDB956436E78DD5FA
+    Raw Profile Data Address: 0x21
+    Encoded Function Address: 0x110
+    Function Size:   0x30
+    Control Flow Graph Signature: 0x1111
+    Raw Profile Count: 0
+    Function Call Count: 0
+    Function Order Sum: 0
+    Basic Block Profiles:
+      - Offset:          0x0
+        Covered:         false
+    Call Edges:      []
+...
