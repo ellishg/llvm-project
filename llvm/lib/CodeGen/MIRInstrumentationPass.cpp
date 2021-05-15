@@ -80,10 +80,6 @@ bool MIRInstrumentation::doInitialization(Module &M) {
                     Twine(EnableMachineFunctionCoverage.ArgStr) +
                     " is provided.");
 
-    if (EnableMachineCallGraph)
-      Ctx.emitError("-" + Twine(EnableMachineCallGraph.ArgStr) +
-                    " is not yet implemented.");
-
     if (MachineProfileRuntimeBufferSize)
       Ctx.emitError("-" + Twine(MachineProfileRuntimeBufferSize.ArgStr) +
                     " is not yet implemented.");
@@ -122,7 +118,9 @@ bool MIRInstrumentation::runOnMachineFunction(MachineFunction &MF) {
             TII.get(TargetOpcode::MIP_FUNCTION_COVERAGE_INSTRUMENTATION))
         .addReg(TII.getTemporaryMachineProfileRegister(EntryBlock));
   } else if (EnableMachineCallGraph) {
-    llvm_unreachable("Not yet implemented");
+    BuildMI(EntryBlock, MBBI, DL, TII.get(TargetOpcode::MIP_INSTRUMENTATION))
+        .addReg(TII.getTemporaryMachineProfileRegister(EntryBlock))
+        .addExternalSymbol("__llvm_mip_call_counts_caller");
   } else {
     llvm_unreachable(
         "Expected function coverage or call graph instrumentation.");

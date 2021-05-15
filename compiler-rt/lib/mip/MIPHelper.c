@@ -12,6 +12,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+// The global timestamp value. Effectively records the number of unique
+// functions that have been called. A value of zero means instrumentation is
+// disabled.
+uint32_t __llvm_mip_global_timestamp = 1;
+
 void __llvm_mip_runtime_initialize(void) { atexit(__llvm_dump_mip_profile); }
 
 void __llvm_dump_mip_profile(void) {
@@ -54,6 +59,30 @@ int __llvm_dump_mip_profile_with_filename(const char *Filename) {
 
   fclose(filep);
   return 0;
+}
+
+// Implements "Call Count" function instrumentation and returns the address of
+// `ProfileData`.
+// NOTE: This code is not thread-safe, but that is ok because absolute precision
+//       of `CallCount` and `Timestamp` is not critical. 
+void *
+__llvm_mip_call_counts_instrumentation_helper(ProfileData_t *ProfileData) {
+  if (__llvm_mip_global_timestamp) {
+    if (ProfileData->CallCount == 0xFFFFFFFF) {
+      // This function is called for the first time.
+      ProfileData->CallCount = 1;
+      ProfileData->Timestamp = __llvm_mip_global_timestamp;
+      // Since the number of functions << 2^32, a saturating add is not
+      // necessary.
+      __llvm_mip_global_timestamp += 1;
+    } else {
+      // This is not the first time this function has been called.
+      uint32_t NewCallCount = ProfileData->CallCount + 1;
+      if (NewCallCount != 0xFFFFFFFF)
+        ProfileData->CallCount = NewCallCount;
+    }
+  }
+  return ProfileData;
 }
 
 #ifdef __linux__

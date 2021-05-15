@@ -111,6 +111,9 @@ unsigned AArch64InstrInfo::getInstSizeInBytes(const MachineInstr &MI) const {
   case TargetOpcode::MIP_FUNCTION_COVERAGE_INSTRUMENTATION:
     NumBytes = 8;
     break;
+  case TargetOpcode::MIP_INSTRUMENTATION:
+    NumBytes = 16;
+    break;
   case TargetOpcode::MIP_BASIC_BLOCK_COVERAGE_INSTRUMENTATION:
     NumBytes = (MI.getOperand(0).getReg() == AArch64::NoRegister) ? 20 : 12;
     break;
@@ -7400,6 +7403,7 @@ AArch64InstrInfo::getOutliningType(MachineBasicBlock::iterator &MIT,
   // Do not outline MIP pseudo instructions.
   case TargetOpcode::MIP_FUNCTION_INSTRUMENTATION_MARKER:
   case TargetOpcode::MIP_FUNCTION_COVERAGE_INSTRUMENTATION:
+  case TargetOpcode::MIP_INSTRUMENTATION:
   case TargetOpcode::MIP_BASIC_BLOCK_COVERAGE_INSTRUMENTATION:
     return outliner::InstrType::Illegal;
   }

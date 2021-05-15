@@ -44,6 +44,11 @@ HANDLE_TARGET_OPCODE(MIP_FUNCTION_INSTRUMENTATION_MARKER)
 /// one exists.
 HANDLE_TARGET_OPCODE(MIP_FUNCTION_COVERAGE_INSTRUMENTATION)
 
+/// MIP_INSTRUMENTATION - This instruction implements mip instrumentation. It
+/// takes as input a free temporary register if one exists and the symbol to
+/// the helper function that implements the instrumentation.
+HANDLE_TARGET_OPCODE(MIP_INSTRUMENTATION)
+
 /// MIP_BASIC_BLOCK_COVERAGE_INSTRUMENTATION - This instruction implements basic
 /// block coverage instrumentation. It takes as input a free temporary register
 /// if one exists and the id of the instrumented block.

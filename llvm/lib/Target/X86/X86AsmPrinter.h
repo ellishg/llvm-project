@@ -89,6 +89,7 @@ class LLVM_LIBRARY_VISIBILITY X86AsmPrinter : public AsmPrinter {
 
   void LowerMIP_FUNCTION_INSTRUMENTATION_MARKER(const MachineInstr &MI);
   void LowerMIP_FUNCTION_COVERAGE_INSTRUMENTATION(const MachineInstr &MI);
+  void LowerMIP_INSTRUMENTATION(const MachineInstr &MI, X86MCInstLower &MCIL);
   void LowerMIP_BASIC_BLOCK_COVERAGE_INSTRUMENTATION(const MachineInstr &MI);
 
   // XRay-specific lowering for X86.

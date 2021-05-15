@@ -151,6 +151,12 @@ std::error_code mergeMain() {
           Profile.FunctionCallCount =
               std::max<uint64_t>(Profile.FunctionCallCount, 1);
         }
+      } else {
+        if (RawProfile.IsFunctionCovered) {
+          Profile.RawProfileCount++;
+          Profile.FunctionCallCount += RawProfile.FunctionCallCount;
+          Profile.FunctionOrderSum += RawProfile.FunctionTimestamp;
+        }
       }
 
       if (RawHeader.ProfileType & MIP_PROFILE_TYPE_BLOCK_COVERAGE) {
@@ -215,6 +221,8 @@ std::error_code showMain() {
       OS << "  Source Info: " << SourceInfo.FileName << ":" << SourceInfo.Line
          << "\n";
     OS << "  Call Count: " << Profile.FunctionCallCount << "\n";
+    if (Profile.FunctionOrderSum)
+      OS << "  Order Sum: " << Profile.FunctionOrderSum << "\n";
     if (Profile.BasicBlockProfiles.size() > 1) {
       OS << "  Block Coverage:";
       for (unsigned I = 0; I < Profile.BasicBlockProfiles.size(); I++) {

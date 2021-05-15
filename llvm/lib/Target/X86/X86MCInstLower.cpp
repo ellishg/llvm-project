@@ -1447,6 +1447,28 @@ void X86AsmPrinter::LowerMIP_FUNCTION_COVERAGE_INSTRUMENTATION(
   );
 }
 
+void X86AsmPrinter::LowerMIP_INSTRUMENTATION(const MachineInstr &MI,
+                                             X86MCInstLower &MCIL) {
+  auto *RawProfileSymbol = MIPEmitter.getRawProfileSymbol(*MI.getMF());
+  Optional<MCOperand> HelperSymbolOp =
+      MCIL.LowerMachineOperand(&MI, MI.getOperand(1));
+
+  OutStreamer->AddComment("MIP Instrumentation");
+  // leaq   <RawProfileSymbol>(%rip), %rax
+  EmitAndCountInstruction(
+      MCInstBuilder(X86::LEA64r)
+          .addReg(X86::RAX)
+          .addReg(X86::RIP)
+          .addImm(1)
+          .addReg(X86::NoRegister)
+          .addExpr(MCSymbolRefExpr::create(RawProfileSymbol, OutContext))
+          .addReg(X86::NoRegister));
+
+  // callq  <HelperSymbol>
+  EmitAndCountInstruction(
+      MCInstBuilder(X86::CALL64pcrel32).addOperand(*HelperSymbolOp));
+}
+
 void X86AsmPrinter::LowerMIP_BASIC_BLOCK_COVERAGE_INSTRUMENTATION(
     const MachineInstr &MI) {
   MIPEmitter.runOnBasicBlockInstrumentationMarker(MI);
@@ -2641,6 +2663,9 @@ void X86AsmPrinter::emitInstruction(const MachineInstr *MI) {
 
   case TargetOpcode::MIP_FUNCTION_COVERAGE_INSTRUMENTATION:
     return LowerMIP_FUNCTION_COVERAGE_INSTRUMENTATION(*MI);
+
+  case TargetOpcode::MIP_INSTRUMENTATION:
+    return LowerMIP_INSTRUMENTATION(*MI, MCInstLowering);
 
   case TargetOpcode::MIP_BASIC_BLOCK_COVERAGE_INSTRUMENTATION:
     return LowerMIP_BASIC_BLOCK_COVERAGE_INSTRUMENTATION(*MI);

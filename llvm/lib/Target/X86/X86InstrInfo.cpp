@@ -9422,6 +9422,7 @@ X86InstrInfo::getOutliningType(MachineBasicBlock::iterator &MIT,  unsigned Flags
   // Do not outline MIP pseudo instructions.
   case TargetOpcode::MIP_FUNCTION_INSTRUMENTATION_MARKER:
   case TargetOpcode::MIP_FUNCTION_COVERAGE_INSTRUMENTATION:
+  case TargetOpcode::MIP_INSTRUMENTATION:
   case TargetOpcode::MIP_BASIC_BLOCK_COVERAGE_INSTRUMENTATION:
     return outliner::InstrType::Illegal;
   }

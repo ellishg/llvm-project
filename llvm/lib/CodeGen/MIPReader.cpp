@@ -81,7 +81,9 @@ readMIPHeader(const Twine &Filename, MIPFileType FileType, MIPHeader &Header) {
                        << "\n";
     return std::make_error_code(std::errc::invalid_argument);
   } else if (Header.ProfileType & ~(MIP_PROFILE_TYPE_FUNCTION_COVERAGE |
-                                    MIP_PROFILE_TYPE_BLOCK_COVERAGE)) {
+                                    MIP_PROFILE_TYPE_BLOCK_COVERAGE |
+                                    MIP_PROFILE_TYPE_FUNCTION_TIMESTAMP |
+                                    MIP_PROFILE_TYPE_FUNCTION_CALL_COUNT)) {
     WithColor::error() << Filename << ": Invalid profile type\n"
                        << "Got: 0x" << Twine::utohexstr(Header.ProfileType)
                        << " \n";
@@ -294,6 +296,24 @@ std::error_code MIPRawReader::readData(std::unique_ptr<MemoryBuffer> &Buffer,
     if (RawMIP->Header.ProfileType & MIP_PROFILE_TYPE_FUNCTION_COVERAGE) {
       RawProfile.IsFunctionCovered =
           (endian::readNext<uint8_t, little, unaligned>(Data) == 0x00);
+    } else {
+      uint32_t FunctionCallCount =
+          endian::readNext<uint32_t, little, unaligned>(Data);
+      uint32_t FunctionTimestamp =
+          endian::readNext<uint32_t, little, unaligned>(Data);
+      if ((FunctionCallCount == 0xFFFFFFFF) !=
+          (FunctionTimestamp == 0xFFFFFFFF)) {
+        WithColor::error() << "Corrupt raw profile near offset 0x"
+                           << Twine::utohexstr(
+                                  (uint64_t)(Data - Buffer->getBufferStart()))
+                           << "\n";
+        return std::make_error_code(std::errc::invalid_argument);
+      }
+      if (FunctionCallCount != 0xFFFFFFFF) {
+        RawProfile.FunctionCallCount = FunctionCallCount;
+        RawProfile.FunctionTimestamp = FunctionTimestamp;
+      }
+      RawProfile.IsFunctionCovered = (RawProfile.FunctionCallCount > 0);
     }
 
     if (RawMIP->Header.ProfileType & MIP_PROFILE_TYPE_BLOCK_COVERAGE) {
