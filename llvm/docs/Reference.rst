@@ -31,7 +31,9 @@ LLVM and API reference documentation.
    LangRef
    LibFuzzer
    MarkedUpDisassembly
+   MachineProfile
    MIRLangRef
+   MIPBinaryFormat
    OptBisect
    PDB/index
    PointerAuth
@@ -141,9 +143,12 @@ Testing and Debugging
 :doc:`GwpAsan`
   A sampled heap memory error detection toolkit designed for production use.
 
-====
-XRay
-====
+===============
+Instrumentation
+===============
+
+:doc:`MachineProfile`
+  Describes how to use instrument binaries with MIP.
 
 :doc:`XRay`
   High-level documentation of how to use XRay in LLVM.

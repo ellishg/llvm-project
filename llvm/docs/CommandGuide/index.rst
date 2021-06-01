@@ -29,6 +29,7 @@ Basic Commands
    llvm-link
    llvm-lipo
    llvm-mca
+   llvm-mipdata
    llvm-otool
    llvm-profdata
    llvm-readobj
