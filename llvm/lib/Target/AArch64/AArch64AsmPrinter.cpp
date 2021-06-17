@@ -106,6 +106,9 @@ public:
   void LowerFAULTING_OP(const MachineInstr &MI);
 
   void LowerPATCHABLE_FUNCTION_ENTER(const MachineInstr &MI);
+  void LowerMIP_FUNCTION_INSTRUMENTATION_MARKER(const MachineInstr &MI);
+  void LowerMIP_FUNCTION_COVERAGE_INSTRUMENTATION(const MachineInstr &MI);
+  void LowerMIP_BASIC_BLOCK_COVERAGE_INSTRUMENTATION(const MachineInstr &MI);
   void LowerPATCHABLE_FUNCTION_EXIT(const MachineInstr &MI);
   void LowerPATCHABLE_TAIL_CALL(const MachineInstr &MI);
 
@@ -252,6 +255,96 @@ void AArch64AsmPrinter::emitFunctionHeaderComment() {
   Optional<std::string> OutlinerString = FI->getOutliningStyle();
   if (OutlinerString != None)
     OutStreamer->GetCommentOS() << ' ' << OutlinerString;
+}
+
+void AArch64AsmPrinter::LowerMIP_FUNCTION_INSTRUMENTATION_MARKER(
+    const MachineInstr &MI) {
+  MIPEmitter.runOnFunctionInstrumentationMarker(MI);
+}
+
+void AArch64AsmPrinter::LowerMIP_FUNCTION_COVERAGE_INSTRUMENTATION(
+    const MachineInstr &MI) {
+  auto *RawProfileSymbol = MIPEmitter.getRawProfileSymbol(*MI.getMF());
+
+  const auto ProfileRegister = MI.getOperand(0).getReg();
+  auto RawAddressPageMO =
+      MachineOperand::CreateMCSymbol(RawProfileSymbol, AArch64II::MO_PAGE);
+  auto RawAddressPageOffsetMO = MachineOperand::CreateMCSymbol(
+      RawProfileSymbol, AArch64II::MO_PAGEOFF | AArch64II::MO_NC);
+  MCOperand RawAddressPageMCO, RawAddressPageOffsetMCO;
+  lowerOperand(RawAddressPageMO, RawAddressPageMCO);
+  lowerOperand(RawAddressPageOffsetMO, RawAddressPageOffsetMCO);
+
+  OutStreamer->AddComment("MIP: Function Coverage");
+  // adrp   <ProfileRegister>, <RawProfileSymbolPage>
+  EmitToStreamer(*OutStreamer, MCInstBuilder(AArch64::ADRP)
+                                   .addReg(ProfileRegister)
+                                   .addOperand(RawAddressPageMCO));
+  // strb   wzr, [<ProfileRegister>, <RawProfileSymbolPageOffset>]
+  EmitToStreamer(*OutStreamer, MCInstBuilder(AArch64::STRBBui)
+                                   .addReg(AArch64::WZR)
+                                   .addReg(ProfileRegister)
+                                   .addOperand(RawAddressPageOffsetMCO));
+}
+
+void AArch64AsmPrinter::LowerMIP_BASIC_BLOCK_COVERAGE_INSTRUMENTATION(
+    const MachineInstr &MI) {
+  MIPEmitter.runOnBasicBlockInstrumentationMarker(MI);
+
+  auto *RawProfileSymbol = MIPEmitter.getRawProfileSymbol(*MI.getMF());
+  auto TempRegister = MI.getOperand(0).getReg();
+  auto BlockID = MI.getOperand(1).getImm();
+  auto Offset = MIPEmitter.getOffsetToRawBlockProfileSymbol(BlockID);
+  bool ShouldSpillRegister = TempRegister == AArch64::NoRegister;
+
+  auto RawAddressPageMO =
+      MachineOperand::CreateMCSymbol(RawProfileSymbol, AArch64II::MO_PAGE);
+  auto RawAddressPageOffsetMO = MachineOperand::CreateMCSymbol(
+      RawProfileSymbol, AArch64II::MO_PAGEOFF | AArch64II::MO_NC);
+  MCOperand RawAddressPageMCO, RawAddressPageOffsetMCO;
+  lowerOperand(RawAddressPageMO, RawAddressPageMCO);
+  lowerOperand(RawAddressPageOffsetMO, RawAddressPageOffsetMCO);
+
+  OutStreamer->AddComment("MIP: Block Coverage");
+  // TODO: There is still some oportunity for optimization here. If there is a
+  //       register that is dead for the whole function, we can use it to store
+  //       the raw profile address at the beginning of the function. Then for
+  //       each block we use one `strb` instruction with an offset if the offset
+  //       is less than 4096.
+  if (ShouldSpillRegister) {
+    TempRegister = AArch64::X16;
+    // Spill the temporary register.
+    // str    <TempRegister>, [sp, #-16]!
+    EmitToStreamer(*OutStreamer, MCInstBuilder(AArch64::STRXpre)
+                                     .addReg(AArch64::SP)
+                                     .addReg(TempRegister)
+                                     .addReg(AArch64::SP)
+                                     .addImm(-16));
+  }
+  // adrp   <TempRegister>, <RawProfileSymbolPage>
+  EmitToStreamer(*OutStreamer, MCInstBuilder(AArch64::ADRP)
+                                   .addReg(TempRegister)
+                                   .addOperand(RawAddressPageMCO));
+  // add    <TempRegister>, <TempRegister>, <Offset>
+  EmitToStreamer(*OutStreamer, MCInstBuilder(AArch64::ADDXri)
+                                   .addReg(TempRegister)
+                                   .addReg(TempRegister)
+                                   .addImm(Offset)
+                                   .addImm(0));
+  // strb   wzr, [<TempRegister>, <RawProfileSymbolPageOffset>]
+  EmitToStreamer(*OutStreamer, MCInstBuilder(AArch64::STRBBui)
+                                   .addReg(AArch64::WZR)
+                                   .addReg(TempRegister)
+                                   .addOperand(RawAddressPageOffsetMCO));
+  if (ShouldSpillRegister) {
+    // Restore the temporary register.
+    // ldr    <TempRegister>, [sp], #16
+    EmitToStreamer(*OutStreamer, MCInstBuilder(AArch64::LDRXpost)
+                                     .addReg(AArch64::SP)
+                                     .addReg(TempRegister)
+                                     .addReg(AArch64::SP)
+                                     .addImm(16));
+  }
 }
 
 void AArch64AsmPrinter::LowerPATCHABLE_FUNCTION_ENTER(const MachineInstr &MI)
@@ -1411,6 +1504,15 @@ void AArch64AsmPrinter::emitInstruction(const MachineInstr *MI) {
 
   case TargetOpcode::STACKMAP:
     return LowerSTACKMAP(*OutStreamer, SM, *MI);
+
+  case TargetOpcode::MIP_FUNCTION_INSTRUMENTATION_MARKER:
+    return LowerMIP_FUNCTION_INSTRUMENTATION_MARKER(*MI);
+
+  case TargetOpcode::MIP_FUNCTION_COVERAGE_INSTRUMENTATION:
+    return LowerMIP_FUNCTION_COVERAGE_INSTRUMENTATION(*MI);
+
+  case TargetOpcode::MIP_BASIC_BLOCK_COVERAGE_INSTRUMENTATION:
+    return LowerMIP_BASIC_BLOCK_COVERAGE_INSTRUMENTATION(*MI);
 
   case TargetOpcode::PATCHPOINT:
     return LowerPATCHPOINT(*OutStreamer, SM, *MI);

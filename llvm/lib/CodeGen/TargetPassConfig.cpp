@@ -23,6 +23,7 @@
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Analysis/TypeBasedAliasAnalysis.h"
 #include "llvm/CodeGen/CSEConfigBase.h"
+#include "llvm/CodeGen/MIRInstrumentationPass.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachinePassRegistry.h"
 #include "llvm/CodeGen/Passes.h"
@@ -1231,6 +1232,12 @@ void TargetPassConfig::addMachinePasses() {
     // SampleFDO profile quality.
     addPass(createMIRAddFSDiscriminatorsPass(
         sampleprof::FSDiscriminatorPass::PassLast));
+
+  // Inject machine instrumentation code into machine functions.
+  // NOTE: Block instrumentation may increase block size. Inject code before
+  //       branch relaxation.
+  if (MIRInstrumentation::EnableMachineInstrumentation)
+    addPass(&MIRInstrumentationID);
 
   addPreEmitPass();
 

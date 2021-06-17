@@ -1326,6 +1326,7 @@ public:
     case TargetOpcode::LIFETIME_END:
     case TargetOpcode::PSEUDO_PROBE:
     case TargetOpcode::ARITH_FENCE:
+    case TargetOpcode::MIP_FUNCTION_INSTRUMENTATION_MARKER:
       return true;
     }
   }

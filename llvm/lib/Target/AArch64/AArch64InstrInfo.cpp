@@ -108,6 +108,12 @@ unsigned AArch64InstrInfo::getInstSizeInBytes(const MachineInstr &MI) const {
     // 4-byte insn.
     NumBytes = 4;
     break;
+  case TargetOpcode::MIP_FUNCTION_COVERAGE_INSTRUMENTATION:
+    NumBytes = 8;
+    break;
+  case TargetOpcode::MIP_BASIC_BLOCK_COVERAGE_INSTRUMENTATION:
+    NumBytes = (MI.getOperand(0).getReg() == AArch64::NoRegister) ? 20 : 12;
+    break;
   case TargetOpcode::STACKMAP:
     // The upper bound for a stackmap intrinsic is the full length of its shadow
     NumBytes = StackMapOpers(&MI).getNumPatchBytes();
@@ -4183,6 +4189,23 @@ MCCFIInstruction llvm::createCFAOffset(const TargetRegisterInfo &TRI,
   return MCCFIInstruction::createEscape(nullptr, CfaExpr.str(), Comment.str());
 }
 
+Register AArch64InstrInfo::getTemporaryMachineProfileRegister(
+    const MachineBasicBlock &MBB) const {
+  const auto &MF = *MBB.getParent();
+  const auto &TRI = getRegisterInfo();
+  if (MF.getRegInfo().tracksLiveness()) {
+    LiveRegUnits LRU(TRI);
+    LRU.addReg(AArch64::LR);
+    LRU.addUnits(TRI.getReservedRegs(MF));
+    LRU.addLiveIns(MBB);
+    for (unsigned Reg : AArch64::GPR64RegClass) {
+      if (LRU.available(Reg))
+        return Reg;
+    }
+  }
+  return AArch64::NoRegister;
+}
+
 // Helper function to emit a frame offset adjustment from a given
 // pointer (SrcReg), stored into DestReg. This function is explicit
 // in that it requires the opcode.
@@ -7374,6 +7397,10 @@ AArch64InstrInfo::getOutliningType(MachineBasicBlock::iterator &MIT,
   case AArch64::RETAA:
   case AArch64::RETAB:
   case AArch64::EMITBKEY:
+  // Do not outline MIP pseudo instructions.
+  case TargetOpcode::MIP_FUNCTION_INSTRUMENTATION_MARKER:
+  case TargetOpcode::MIP_FUNCTION_COVERAGE_INSTRUMENTATION:
+  case TargetOpcode::MIP_BASIC_BLOCK_COVERAGE_INSTRUMENTATION:
     return outliner::InstrType::Illegal;
   }
 

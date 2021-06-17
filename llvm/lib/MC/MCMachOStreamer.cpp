@@ -29,6 +29,7 @@
 #include "llvm/MC/MCValue.h"
 #include "llvm/MC/SectionKind.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/MIP/MIP.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
@@ -160,6 +161,11 @@ static bool canGoAfterDWARF(const MCSectionMachO &MSec) {
     return true;
   if (SegName == "__LLVM" && SecName == "__cg_profile")
     return true;
+
+  if (SegName == "__DATA" &&
+      (SecName == MIP_MAP_SECTION_NAME || SecName == MIP_RAW_SECTION_NAME))
+    return true;
+
   return false;
 }
 

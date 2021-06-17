@@ -164,6 +164,15 @@ protected:
   /// FaultMap section.
   MCSection *FaultMapSection = nullptr;
 
+  /// Specials sections for machine instrumentation.
+  MCSection *MIPRawSection = nullptr;
+  MCSection *MIPMapSection = nullptr;
+
+  /// Special COMDAT sections for machine instrumentation. Only used on ELF
+  /// targets.
+  MCSection *MIPRawHeaderComdatSection = nullptr;
+  MCSection *MIPMapHeaderComdatSection = nullptr;
+
   /// Remarks section.
   MCSection *RemarksSection = nullptr;
 
@@ -349,6 +358,16 @@ public:
 
   MCSection *getStackMapSection() const { return StackMapSection; }
   MCSection *getFaultMapSection() const { return FaultMapSection; }
+
+  MCSection *getMIPRawSection() const { return MIPRawSection; }
+  MCSection *getMIPMapSection() const { return MIPMapSection; }
+  MCSection *getMIPRawHeaderComdatSection() const {
+    return MIPRawHeaderComdatSection;
+  }
+  MCSection *getMIPMapHeaderComdatSection() const {
+    return MIPMapHeaderComdatSection;
+  }
+
   MCSection *getRemarksSection() const { return RemarksSection; }
 
   MCSection *getStackSizesSection(const MCSection &TextSec) const;

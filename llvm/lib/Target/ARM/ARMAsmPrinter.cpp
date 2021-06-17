@@ -2232,6 +2232,12 @@ void ARMAsmPrinter::emitInstruction(const MachineInstr *MI) {
   case ARM::PATCHABLE_TAIL_CALL:
     LowerPATCHABLE_TAIL_CALL(*MI);
     return;
+  case TargetOpcode::MIP_FUNCTION_INSTRUMENTATION_MARKER:
+    return LowerMIP_FUNCTION_INSTRUMENTATION_MARKER(*MI);
+  case TargetOpcode::MIP_FUNCTION_COVERAGE_INSTRUMENTATION:
+    return LowerMIP_FUNCTION_COVERAGE_INSTRUMENTATION(*MI);
+  case TargetOpcode::MIP_BASIC_BLOCK_COVERAGE_INSTRUMENTATION:
+    return LowerMIP_BASIC_BLOCK_COVERAGE_INSTRUMENTATION(*MI);
   case ARM::SpeculationBarrierISBDSBEndBB: {
     // Print DSB SYS + ISB
     MCInst TmpInstDSB;

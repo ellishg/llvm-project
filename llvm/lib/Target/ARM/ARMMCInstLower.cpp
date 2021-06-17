@@ -227,3 +227,152 @@ void ARMAsmPrinter::LowerPATCHABLE_TAIL_CALL(const MachineInstr &MI)
 {
   EmitSled(MI, SledKind::TAIL_CALL);
 }
+
+void ARMAsmPrinter::LowerMIP_FUNCTION_INSTRUMENTATION_MARKER(
+    const MachineInstr &MI) {
+  MIPEmitter.runOnFunctionInstrumentationMarker(MI);
+}
+
+void ARMAsmPrinter::LowerMIP_FUNCTION_COVERAGE_INSTRUMENTATION(
+    const MachineInstr &MI) {
+  auto *RawProfileSymbol = MIPEmitter.getRawProfileSymbol(*MI.getMF());
+
+  auto &AFI = *MI.getParent()->getParent()->getInfo<ARMFunctionInfo>();
+  auto *RawProfileSymbolLocationLabel =
+      OutContext.createTempSymbol("RawSymbolLoc", true);
+  auto *LoadLabel = OutContext.createTempSymbol("LoadLabel", true);
+  auto *ContinueLabel = OutContext.createTempSymbol("ContinueLabel", true);
+  const MCExpr *RawProfileSymbolLocation =
+      MCSymbolRefExpr::create(RawProfileSymbolLocationLabel, OutContext);
+
+  // TODO: The emitted code is very unoptimized, but we initially strive for
+  //       correctness.
+  OutStreamer->AddComment("MIP: Function Coverage");
+  // push   {r0, r1}
+  auto PushOpcode = AFI.isThumbFunction() ? ARM::tPUSH : ARM::STMDB_UPD;
+  auto PushInst = MCInstBuilder(PushOpcode);
+  if (!AFI.isThumbFunction())
+    PushInst.addReg(ARM::SP).addReg(ARM::SP);
+  PushInst.addImm(ARMCC::AL)
+      .addReg(ARM::NoRegister)
+      .addReg(ARM::R0)
+      .addReg(ARM::R1);
+  EmitToStreamer(*OutStreamer, PushInst);
+
+  // ldr    r1, <RawProfileSymbolLocation>
+  if (AFI.isThumbFunction()) {
+    EmitToStreamer(*OutStreamer, MCInstBuilder(ARM::tLDRpci)
+                                     .addReg(ARM::R1)
+                                     .addOperand(MCOperand::createExpr(
+                                         RawProfileSymbolLocation))
+                                     .addImm(ARMCC::AL)
+                                     .addReg(ARM::NoRegister));
+  } else {
+    EmitToStreamer(*OutStreamer, MCInstBuilder(ARM::LDRi12)
+                                     .addReg(ARM::R1)
+                                     .addOperand(MCOperand::createExpr(
+                                         RawProfileSymbolLocation))
+                                     .addImm(0)
+                                     .addImm(ARMCC::AL)
+                                     .addReg(ARM::NoRegister));
+  }
+
+  // <LoadLabel>:
+  // add    r1, pc, r1
+  OutStreamer->emitLabel(LoadLabel);
+  if (AFI.isThumbFunction()) {
+    EmitToStreamer(*OutStreamer, MCInstBuilder(ARM::tADDhirr)
+                                     .addReg(ARM::R1)
+                                     .addReg(ARM::R1)
+                                     .addReg(ARM::PC)
+                                     .addImm(ARMCC::AL)
+                                     .addReg(ARM::NoRegister));
+  } else {
+    EmitToStreamer(*OutStreamer, MCInstBuilder(ARM::ADDrr)
+                                     .addReg(ARM::R1)
+                                     .addReg(ARM::PC)
+                                     .addReg(ARM::R1)
+                                     .addImm(ARMCC::AL)
+                                     .addReg(ARM::NoRegister)
+                                     .addReg(ARM::NoRegister));
+  }
+
+  // mov    r0, #0
+  if (AFI.isThumbFunction()) {
+    EmitToStreamer(*OutStreamer, MCInstBuilder(ARM::tMOVi8)
+                                     .addReg(ARM::R0)
+                                     .addReg(ARM::CPSR)
+                                     .addImm(0)
+                                     .addImm(ARMCC::AL)
+                                     .addReg(ARM::NoRegister));
+  } else {
+    EmitToStreamer(*OutStreamer, MCInstBuilder(ARM::MOVi)
+                                     .addReg(ARM::R0)
+                                     .addImm(0)
+                                     .addImm(ARMCC::AL)
+                                     .addReg(ARM::NoRegister)
+                                     .addReg(ARM::NoRegister));
+  }
+
+  // strb   r0, [r1]
+  if (AFI.isThumbFunction()) {
+    EmitToStreamer(*OutStreamer, MCInstBuilder(ARM::tSTRBi)
+                                     .addReg(ARM::R0)
+                                     .addReg(ARM::R1)
+                                     .addImm(0)
+                                     .addImm(ARMCC::AL)
+                                     .addReg(ARM::NoRegister));
+  } else {
+    EmitToStreamer(*OutStreamer, MCInstBuilder(ARM::STRB_POST_IMM)
+                                     .addReg(ARM::R1)
+                                     .addReg(ARM::R0)
+                                     .addReg(ARM::R1)
+                                     .addReg(ARM::NoRegister)
+                                     .addImm(0)
+                                     .addImm(ARMCC::AL)
+                                     .addReg(ARM::NoRegister));
+  }
+
+  // pop    {r0, r1}
+  auto PopOpcode = AFI.isThumbFunction() ? ARM::tPOP : ARM::LDMIA_UPD;
+  auto PopInst = MCInstBuilder(PopOpcode);
+  if (!AFI.isThumbFunction())
+    PopInst.addReg(ARM::SP).addReg(ARM::SP);
+  PopInst.addImm(ARMCC::AL)
+      .addReg(ARM::NoRegister)
+      .addReg(ARM::R0)
+      .addReg(ARM::R1);
+  EmitToStreamer(*OutStreamer, PopInst);
+
+  // b      <ContinueLabel>
+  auto BranchOpcode = AFI.isThumbFunction() ? ARM::tB : ARM::Bcc;
+  EmitToStreamer(*OutStreamer, MCInstBuilder(BranchOpcode)
+                                   .addExpr(MCSymbolRefExpr::create(
+                                       ContinueLabel, OutContext))
+                                   .addImm(ARMCC::AL)
+                                   .addReg(ARM::NoRegister));
+  // NOTE: T16 LDR instructions require labels to be 4 byte aligned.
+  // .p2align   2
+  // <RawProfileSymbolLabel>:
+  // .long  <RawProfileSymbol>-(<LoadLabel>+<PCFixup>)
+  OutStreamer->emitCodeAlignment(4, &getSubtargetInfo());
+  OutStreamer->emitLabel(RawProfileSymbolLocationLabel);
+  // NOTE: In ARM the value of PC is the address of the current instruction
+  //       plus 8 bytes, but in Thumb it's 4 bytes.
+  int64_t PCFixupValue = AFI.isThumbFunction() ? 4 : 8;
+  const auto *PCRelativeAddress = MCBinaryExpr::createSub(
+      MCSymbolRefExpr::create(RawProfileSymbol, OutContext),
+      MCBinaryExpr::createAdd(MCSymbolRefExpr::create(LoadLabel, OutContext),
+                              MCConstantExpr::create(PCFixupValue, OutContext),
+                              OutContext),
+      OutContext);
+  OutStreamer->emitValue(PCRelativeAddress, 4);
+
+  // <ContinueLabel>:
+  OutStreamer->emitLabel(ContinueLabel);
+}
+
+void ARMAsmPrinter::LowerMIP_BASIC_BLOCK_COVERAGE_INSTRUMENTATION(
+    const MachineInstr &MI) {
+  llvm_unreachable("MIP block coverage is not implemlented for ARM targets");
+}

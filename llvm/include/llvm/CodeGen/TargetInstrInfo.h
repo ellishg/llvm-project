@@ -2007,6 +2007,14 @@ public:
     return MI.getOperand(0);
   }
 
+  /// Returns a target-specific temporary register that is dead at the
+  /// beginning of the given machine basic block for machine profile
+  /// instrumentation.
+  virtual Register
+  getTemporaryMachineProfileRegister(const MachineBasicBlock &MBB) const {
+    return MCRegister::NoRegister;
+  }
+
 private:
   mutable std::unique_ptr<MIRFormatter> Formatter;
   unsigned CallFrameSetupOpcode, CallFrameDestroyOpcode;

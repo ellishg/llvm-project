@@ -349,6 +349,9 @@ namespace llvm {
   /// the target platform.
   extern char &XRayInstrumentationID;
 
+  /// This pass injects instrumentation code into machine functions.
+  extern char &MIRInstrumentationID;
+
   /// This pass inserts FEntry calls
   extern char &FEntryInserterID;
 

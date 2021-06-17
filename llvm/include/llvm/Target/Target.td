@@ -1071,6 +1071,24 @@ class StandardPseudoInstruction : Instruction {
   let hasNoSchedulingInfo = true;
   let Namespace = "TargetOpcode";
 }
+def MIP_FUNCTION_INSTRUMENTATION_MARKER : StandardPseudoInstruction {
+  let OutOperandList = (outs);
+  let InOperandList = (ins i32imm:$cfg, i32imm:$n);
+  let AsmString = "";
+  let hasSideEffects = 0;
+}
+def MIP_FUNCTION_COVERAGE_INSTRUMENTATION : StandardPseudoInstruction {
+  let OutOperandList = (outs);
+  let InOperandList = (ins unknown:$reg);
+  let AsmString = "";
+  let hasSideEffects = 1;
+}
+def MIP_BASIC_BLOCK_COVERAGE_INSTRUMENTATION : StandardPseudoInstruction {
+  let OutOperandList = (outs);
+  let InOperandList = (ins unknown:$reg, i32imm:$n);
+  let AsmString = "";
+  let hasSideEffects = 1;
+}
 def PHI : StandardPseudoInstruction {
   let OutOperandList = (outs unknown:$dst);
   let InOperandList = (ins variable_ops);

@@ -6243,6 +6243,14 @@ ARMBaseInstrInfo::getOutliningType(MachineBasicBlock::iterator &MIT,
   if (MI.isKill() || MI.isImplicitDef())
     return outliner::InstrType::Invisible;
 
+  switch (MI.getOpcode()) {
+  // Do not outline MIP pseudo instructions.
+  case TargetOpcode::MIP_FUNCTION_INSTRUMENTATION_MARKER:
+  case TargetOpcode::MIP_FUNCTION_COVERAGE_INSTRUMENTATION:
+  case TargetOpcode::MIP_BASIC_BLOCK_COVERAGE_INSTRUMENTATION:
+    return outliner::InstrType::Illegal;
+  }
+
   // PIC instructions contain labels, outlining them would break offset
   // computing.  unsigned Opc = MI.getOpcode();
   unsigned Opc = MI.getOpcode();

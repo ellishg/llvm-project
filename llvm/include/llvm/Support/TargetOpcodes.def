@@ -34,6 +34,21 @@ HANDLE_TARGET_OPCODE(EH_LABEL)
 HANDLE_TARGET_OPCODE(GC_LABEL)
 HANDLE_TARGET_OPCODE(ANNOTATION_LABEL)
 
+/// MIP_FUNCTION_INSTRUMENTATION_MARKER - This instruction is a noop that marks
+/// this function as an instrumented function. It takes as input the control
+/// flow graph signature and the number of machine basic blocks.
+HANDLE_TARGET_OPCODE(MIP_FUNCTION_INSTRUMENTATION_MARKER)
+
+/// MIP_FUNCTION_COVERAGE_INSTRUMENTATION - This instruction implements function
+/// coverage instrumentation. It takes as input a free temporary register if
+/// one exists.
+HANDLE_TARGET_OPCODE(MIP_FUNCTION_COVERAGE_INSTRUMENTATION)
+
+/// MIP_BASIC_BLOCK_COVERAGE_INSTRUMENTATION - This instruction implements basic
+/// block coverage instrumentation. It takes as input a free temporary register
+/// if one exists and the id of the instrumented block.
+HANDLE_TARGET_OPCODE(MIP_BASIC_BLOCK_COVERAGE_INSTRUMENTATION)
+
 /// KILL - This instruction is a noop that is used only to adjust the
 /// liveness of registers. This can be useful when dealing with
 /// sub-registers.

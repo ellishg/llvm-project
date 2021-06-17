@@ -114,6 +114,11 @@ public:
   void LowerPATCHABLE_FUNCTION_EXIT(const MachineInstr &MI);
   void LowerPATCHABLE_TAIL_CALL(const MachineInstr &MI);
 
+  // MIP-specific lowering for ARM.
+  void LowerMIP_FUNCTION_INSTRUMENTATION_MARKER(const MachineInstr &MI);
+  void LowerMIP_FUNCTION_COVERAGE_INSTRUMENTATION(const MachineInstr &MI);
+  void LowerMIP_BASIC_BLOCK_COVERAGE_INSTRUMENTATION(const MachineInstr &MI);
+
 private:
   void EmitSled(const MachineInstr &MI, SledKind Kind);
 
