@@ -164,6 +164,9 @@ static cl::opt<std::string> PGOTestProfileRemappingFile(
     cl::desc("Specify the path of profile remapping file. This is mainly for "
              "test purpose."));
 
+cl::opt<bool> FunctionCoverage("pgo-function-coverage", cl::init(false),
+                               cl::Hidden, cl::ZeroOrMore);
+
 // Command line option to disable value profiling. The default is false:
 // i.e. value profiling is enabled by default. This is for debug purpose.
 static cl::opt<bool> DisableValueProfiling("disable-vp", cl::init(false),
@@ -908,6 +911,23 @@ static void instrumentOneFunc(
 
   FuncPGOInstrumentation<PGOEdge, BBInfo> FuncInfo(
       F, TLI, ComdatMembers, true, BPI, BFI, IsCS, PGOInstrumentEntry);
+
+  if (FunctionCoverage) {
+    // Only instrument functions with debug info.
+    // TODO: We could consider fabricating debug info for functions that do not
+    //       have it.
+    if (F.getSubprogram()) {
+      auto *EntryBlock = &F.getEntryBlock();
+      IRBuilder<> Builder(EntryBlock, EntryBlock->getFirstInsertionPt());
+      Builder.CreateCall(
+          Intrinsic::getDeclaration(M, Intrinsic::instrprof_cover),
+          {ConstantExpr::getBitCast(FuncInfo.FuncNameVar,
+                                    Type::getInt8PtrTy(M->getContext())),
+           Builder.getInt64(FuncInfo.FunctionHash)});
+    }
+    return;
+  }
+
   std::vector<BasicBlock *> InstrumentBBs;
   FuncInfo.getInstrumentBBs(InstrumentBBs);
   unsigned NumCounters =

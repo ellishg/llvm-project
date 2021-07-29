@@ -90,6 +90,9 @@ private:
   /// Replace instrprof_value_profile with a call to runtime library.
   void lowerValueProfileInst(InstrProfValueProfileInst *Ins);
 
+  /// Replace instrprof_cover
+  void lowerCover(InstrProfCoverInst *Inst);
+
   /// Replace instrprof_increment with an increment of the appropriate value.
   void lowerIncrement(InstrProfIncrementInst *Inc);
 

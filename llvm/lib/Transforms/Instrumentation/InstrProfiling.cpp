@@ -26,6 +26,7 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constant.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DIBuilder.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
@@ -35,6 +36,7 @@
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Mangler.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
 #include "llvm/InitializePasses.h"
@@ -56,6 +58,8 @@
 using namespace llvm;
 
 #define DEBUG_TYPE "instrprof"
+
+extern cl::opt<bool> FunctionCoverage;
 
 namespace {
 
@@ -451,6 +455,9 @@ bool InstrProfiling::lowerIntrinsics(Function *F) {
       if (Inc) {
         lowerIncrement(Inc);
         MadeChange = true;
+      } else if (auto *Inst = dyn_cast<InstrProfCoverInst>(&Instr)) {
+        lowerCover(Inst);
+        MadeChange = true;
       } else if (auto *Ind = dyn_cast<InstrProfValueProfileInst>(&Instr)) {
         lowerValueProfileInst(Ind);
         MadeChange = true;
@@ -529,6 +536,10 @@ static bool needsRuntimeHookUnconditionally(const Triple &TT) {
 
 /// Check if the module contains uses of any profiling intrinsics.
 static bool containsProfilingIntrinsics(Module &M) {
+  if (auto *F =
+          M.getFunction(Intrinsic::getName(llvm::Intrinsic::instrprof_cover)))
+    if (!F->use_empty())
+      return true;
   if (auto *F = M.getFunction(
           Intrinsic::getName(llvm::Intrinsic::instrprof_increment)))
     if (!F->use_empty())
@@ -685,6 +696,27 @@ void InstrProfiling::lowerValueProfileInst(InstrProfValueProfileInst *Ind) {
     Call->addParamAttr(2, AK);
   Ind->replaceAllUsesWith(Call);
   Ind->eraseFromParent();
+}
+
+void InstrProfiling::lowerCover(InstrProfCoverInst *Inst) {
+  auto *Counter = getOrCreateRegionCounters(Inst);
+  auto *Fn = Inst->getParent()->getParent();
+  if (auto *SP = Fn->getSubprogram()) {
+    DIBuilder DB(*M, true, SP->getUnit());
+    // TODO: Set DW_AT_artificial attribute.
+    // TODO: Fill DW_AT_description attribute with metadata (cfg hash).
+    auto *DIRawProfile = DB.createGlobalVariableExpression(
+        SP, Counter->getName(), StringRef(), SP->getFile(),
+        /*LineNo=*/0,
+        DB.createBasicType("Cover Type", 8, dwarf::DW_ATE_boolean),
+        Counter->hasLocalLinkage());
+    Counter->addDebugInfo(DIRawProfile);
+    DB.finalize();
+  }
+
+  IRBuilder<> Builder(Inst);
+  Builder.CreateStore(Builder.getInt8(true), Counter);
+  Inst->eraseFromParent();
 }
 
 void InstrProfiling::lowerIncrement(InstrProfIncrementInst *Inc) {
@@ -899,8 +931,22 @@ InstrProfiling::getOrCreateRegionCounters(InstrProfIncrementInst *Inc) {
     }
   };
 
-  uint64_t NumCounters = Inc->getNumCounters()->getZExtValue();
   LLVMContext &Ctx = M->getContext();
+  if (auto *CoverInst = dyn_cast<InstrProfCoverInst>(Inc)) {
+    auto *CoverTy = Type::getInt8Ty(Ctx);
+    auto *CoverPtr =
+        new GlobalVariable(*M, CoverTy, false, Linkage,
+                           Constant::getNullValue(CoverTy), CntsVarName);
+    CoverPtr->setVisibility(Visibility);
+    CoverPtr->setSection(
+        getInstrProfSectionName(IPSK_cnts, TT.getObjectFormat()));
+    CoverPtr->setAlignment(Align(1));
+    MaybeSetComdat(CoverPtr);
+    CoverPtr->setLinkage(Linkage);
+    CompilerUsedVars.push_back(CoverPtr);
+    return CoverPtr;
+  }
+  uint64_t NumCounters = Inc->getNumCounters()->getZExtValue();
   ArrayType *CounterTy = ArrayType::get(Type::getInt64Ty(Ctx), NumCounters);
 
   // Create the counters variable.
@@ -1135,6 +1181,9 @@ bool InstrProfiling::emitRuntimeHook() {
   // We expect the linker to be invoked with -u<hook_var> flag for Linux
   // in which case there is no need to emit the external variable.
   if (TT.isOSLinux())
+    return false;
+
+  if (FunctionCoverage)
     return false;
 
   // If the module's provided its own runtime, we don't need to do anything.
