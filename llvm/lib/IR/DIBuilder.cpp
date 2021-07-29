@@ -32,9 +32,22 @@ static cl::opt<bool>
                cl::init(false), cl::Hidden);
 
 DIBuilder::DIBuilder(Module &m, bool AllowUnresolvedNodes, DICompileUnit *CU)
-  : M(m), VMContext(M.getContext()), CUNode(CU),
-      DeclareFn(nullptr), ValueFn(nullptr), LabelFn(nullptr),
-      AllowUnresolvedNodes(AllowUnresolvedNodes) {}
+    : M(m), VMContext(M.getContext()), CUNode(CU), DeclareFn(nullptr),
+      ValueFn(nullptr), LabelFn(nullptr),
+      AllowUnresolvedNodes(AllowUnresolvedNodes) {
+  if (CUNode) {
+    auto ETs = CUNode->getEnumTypes();
+    auto RTs = CUNode->getRetainedTypes();
+    auto GVs = CUNode->getGlobalVariables();
+    auto IMs = CUNode->getImportedEntities();
+    AllEnumTypes.assign(ETs.begin(), ETs.end());
+    AllRetainTypes.assign(RTs.begin(), RTs.end());
+    AllGVs.assign(GVs.begin(), GVs.end());
+    AllImportedModules.assign(IMs.begin(), IMs.end());
+    for (auto *MN : CUNode->getMacros())
+      AllMacrosPerParent[nullptr].insert(MN);
+  }
+}
 
 void DIBuilder::trackIfUnresolved(MDNode *N) {
   if (!N)
