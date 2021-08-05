@@ -19,6 +19,7 @@
 #include "llvm/Object/Archive.h"
 #include "llvm/Object/MachOUniversal.h"
 #include "llvm/Object/ObjectFile.h"
+#include "llvm/ProfileData/InstrProf.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Format.h"
@@ -258,6 +259,7 @@ static opt<bool> Verbose("verbose",
                          cat(DwarfDumpCategory));
 static alias VerboseAlias("v", desc("Alias for --verbose."), aliasopt(Verbose),
                           cat(DwarfDumpCategory), cl::NotHidden);
+static cl::opt<bool> ReadRawProfile("read", cat(DwarfDumpCategory));
 static cl::extrahelp
     HelpResponse("\nPass @FILE as argument to read options from FILE.\n");
 } // namespace
@@ -489,6 +491,94 @@ static bool dumpObjectFile(ObjectFile &Obj, DWARFContext &DICtx,
   return true;
 }
 
+bool isRawProfileDIE(const DWARFDie &Die) {
+  if (const char *Name = Die.getName(DINameKind::ShortName))
+    return StringRef(Name).startswith(getInstrProfCountersVarPrefix());
+  return false;
+}
+
+llvm::Optional<uint64_t> getRawProfileAddress(const DWARFDie &Die) {
+  auto *Unit = Die.getDwarfUnit();
+  auto &DICtx = Unit->getContext();
+
+  auto Locations = Die.getLocations(dwarf::Attribute::DW_AT_location);
+  if (!Locations) {
+    consumeError(Locations.takeError());
+    return {};
+  }
+
+  for (auto Location : Locations.get()) {
+    auto AddressSize = Unit->getAddressByteSize();
+    DataExtractor Data(Location.Expr, DICtx.isLittleEndian(), AddressSize);
+    DWARFExpression Expr(Data, AddressSize);
+    for (auto Op : Expr) {
+      if (Op.getCode() == dwarf::DW_OP_addr) {
+        return Op.getRawOperand(0);
+      }
+    }
+  }
+  return {};
+}
+
+llvm::Optional<SectionRef> getRawSection(ObjectFile &Obj) {
+  for (auto &Section : Obj.sections()) {
+    if (auto SectionName = Section.getName()) {
+      if (SectionName.get() == "__llvm_prf_cnts") {
+        return Section;
+      }
+    }
+  }
+  return {};
+}
+
+static bool readRawProfile(ObjectFile &Obj, DWARFContext &DICtx,
+                           const Twine &Filename, raw_ostream &OS) {
+  if (auto RawSection = getRawSection(Obj)) {
+    OS << "Section Start = 0x" << Twine::utohexstr(RawSection->getAddress())
+       << "\nSection Size = 0x" << Twine::utohexstr(RawSection->getSize())
+       << "\n";
+
+    // std::string RawProfileFilename = "default.profraw";
+    // auto BuffOrErr = MemoryBuffer::getFile(RawProfileFilename);
+    // error(RawProfileFilename, BuffOrErr.getError());
+    // auto Buffer = std::move(BuffOrErr.get());
+    // const char *RawProfileData = Buffer->getBufferStart();
+
+    auto doIt = [&](DWARFContext::unit_iterator_range CUs) {
+      for (const auto &CU : CUs) {
+        for (const auto &Entry : CU->dies()) {
+          DWARFDie Die = {CU.get(), &Entry};
+          if (isRawProfileDIE(Die)) {
+            if (auto RawProfileAddress = getRawProfileAddress(Die)) {
+              uint64_t Offset = *RawProfileAddress - RawSection->getAddress();
+              if (RawProfileAddress >= RawSection->getAddress() &&
+                  Offset < RawSection->getSize()) {
+                // bool IsCovered = RawProfileData[Offset];
+                // OS << Die.getParent().getShortName() << " "
+                //    << (IsCovered ? "Covered" : "Dead") << "\n";
+                OS << "0x" << Twine::utohexstr(Offset) << " "
+                   << Die.getParent().getShortName() << "\n";
+              } else {
+                OS << "0x" << Twine::utohexstr(*RawProfileAddress)
+                   << " (Outside Raw Section) "
+                   << Die.getParent().getShortName() << "\n";
+              }
+            } else {
+              OS << "Unknown " << Die.getParent().getShortName() << "\n";
+              // Die.getParent().dump(OS);
+              // Die.dump(OS);
+            }
+          }
+        }
+      }
+    };
+
+    doIt(DICtx.normal_units());
+    doIt(DICtx.dwo_units());
+  }
+  return true;
+}
+
 static bool verifyObjectFile(ObjectFile &Obj, DWARFContext &DICtx,
                              const Twine &Filename, raw_ostream &OS) {
   // Verify the DWARF and exit with non-zero exit status if verification
@@ -697,6 +787,9 @@ int main(int argc, char **argv) {
   } else if (ShowSectionSizes) {
     for (auto Object : Objects)
       Success &= handleFile(Object, collectObjectSectionSizes, OutputFile.os());
+  } else if (ReadRawProfile) {
+    for (auto Object : Objects)
+      Success &= handleFile(Object, readRawProfile, OutputFile.os());
   } else {
     for (auto Object : Objects)
       Success &= handleFile(Object, dumpObjectFile, OutputFile.os());
