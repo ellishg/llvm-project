@@ -1290,6 +1290,7 @@ void DwarfDebug::finalizeModuleInfo() {
     auto &TheCU = *P.second;
     if (TheCU.getCUNode()->isDebugDirectivesOnly())
       continue;
+    TheCU.finishStaticVariableDIEs();
     // Emit DW_AT_containing_type attribute to connect types with their
     // vtable holding type.
     TheCU.constructContainingTypeDIEs();

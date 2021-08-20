@@ -1,7 +1,6 @@
 ; RUN: llc -arm-global-merge -global-merge-group-by-use=false -filetype=obj < %s | llvm-dwarfdump -debug-info -v - | FileCheck %s
 
 ; CHECK: DW_TAG_variable
-; CHECK-NOT: DW_TAG
 ; CHECK:    DW_AT_name {{.*}} "x1"
 ; CHECK-NOT: {{DW_TAG|NULL}}
 ; CHECK:    DW_AT_location [DW_FORM_exprloc]        (DW_OP_addr [[ADDR:0x[0-9a-fA-F]+]])
@@ -128,4 +127,3 @@ attributes #1 = { nounwind readnone }
 !45 = distinct !DILexicalBlock(scope: !41, file: !3, line: 17, column: 19)
 !46 = !DILocation(line: 17, column: 16, scope: !41)
 !47 = !DILocation(line: 17, column: 32, scope: !45)
-

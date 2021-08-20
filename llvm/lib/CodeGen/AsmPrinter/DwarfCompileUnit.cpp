@@ -132,6 +132,22 @@ unsigned DwarfCompileUnit::getOrCreateSourceID(const DIFile *File) {
       File->getSource(), CUID);
 }
 
+DIE *DwarfCompileUnit::getOrCreateGlobalVariableParentDIE(
+    const DIGlobalVariable *GV, ArrayRef<GlobalExpr> GlobalExprs) {
+  auto *Scope = GV->getScope();
+  if (auto *ParentDie = getAbstractSPDies()[Scope])
+    return ParentDie;
+  else if (auto *CB = Scope ? dyn_cast<DICommonBlock>(Scope) : nullptr)
+    return getOrCreateCommonBlock(CB, GlobalExprs);
+  else
+    return getOrCreateContextDIE(Scope);
+}
+
+void DwarfCompileUnit::finishStaticVariableDIEs() {
+  for (auto &Var : UnfinishedStaticVariables)
+    getOrCreateGlobalVariableParentDIE(Var.GV, Var.Exprs)->addChild(Var.Die);
+}
+
 DIE *DwarfCompileUnit::getOrCreateGlobalVariableDIE(
     const DIGlobalVariable *GV, ArrayRef<GlobalExpr> GlobalExprs) {
   // Check for pre-existence.
@@ -139,18 +155,18 @@ DIE *DwarfCompileUnit::getOrCreateGlobalVariableDIE(
     return Die;
 
   assert(GV);
-
-  auto *GVContext = GV->getScope();
   const DIType *GTy = GV->getType();
 
-  // Construct the context before querying for the existence of the DIE in
-  // case such construction creates the DIE.
-  auto *CB = GVContext ? dyn_cast<DICommonBlock>(GVContext) : nullptr;
-  DIE *ContextDIE = CB ? getOrCreateCommonBlock(CB, GlobalExprs)
-    : getOrCreateContextDIE(GVContext);
+  DIE *VariableDIE = DIE::get(DIEValueAllocator, GV->getTag());
+  if (GV->isLocalToUnit()) {
+    // The scope of a static variable can be a subprogram, but DIEs of inlined
+    // subprograms do not exist yet.
+    UnfinishedStaticVariables.push_back({GV, VariableDIE, GlobalExprs});
+  } else {
+    getOrCreateGlobalVariableParentDIE(GV, GlobalExprs)->addChild(VariableDIE);
+  }
+  insertDIE(GV, VariableDIE);
 
-  // Add to map.
-  DIE *VariableDIE = &createAndAddDIE(GV->getTag(), *ContextDIE, GV);
   DIScope *DeclContext;
   if (auto *SDMDecl = GV->getStaticDataMemberDeclaration()) {
     DeclContext = SDMDecl->getScope();
@@ -475,7 +491,7 @@ DIE &DwarfCompileUnit::updateSubprogramScopeDIE(const DISubprogram *SP) {
           // FIXME: when writing dwo, we need to avoid relocations. Probably
           // the "right" solution is to treat globals the way func and data
           // symbols are (with entries in .debug_addr).
-          // For now, since we only ever use index 0, this should work as-is.       
+          // For now, since we only ever use index 0, this should work as-is.
           addUInt(*Loc, dwarf::DW_FORM_data4, FrameBase.Location.WasmLoc.Index);
         }
         addUInt(*Loc, dwarf::DW_FORM_data1, dwarf::DW_OP_stack_value);
@@ -1009,6 +1025,8 @@ DIE *DwarfCompileUnit::createScopeChildrenDIE(LexicalScope *Scope,
   auto Locals = sortLocalVars(Vars.Locals);
   for (DbgVariable *DV : Locals)
     Children.push_back(constructVariableDIE(*DV, *Scope, ObjectPointer));
+
+  // TODO: Emit static global variables.
 
   // Skip imported directives in gmlt-like data.
   if (!includeMinimalInlineScopes()) {

@@ -45,6 +45,14 @@ class MDNode;
 enum class UnitKind { Skeleton, Full };
 
 class DwarfCompileUnit final : public DwarfUnit {
+public:
+  /// A pair of GlobalVariable and DIExpression.
+  struct GlobalExpr {
+    const GlobalVariable *Var;
+    const DIExpression *Expr;
+  };
+
+private:
   /// A numeric ID unique among all CUs in the module
   unsigned UniqueID;
   bool HasRangeLists = false;
@@ -82,6 +90,14 @@ class DwarfCompileUnit final : public DwarfUnit {
 
   DenseMap<const MDNode *, DIE *> AbstractSPDies;
   DenseMap<const DINode *, std::unique_ptr<DbgEntity>> AbstractEntities;
+
+  /// A static variable that does not yet have a parent DIE.
+  struct UnfinishedStaticVariable {
+    const DIGlobalVariable *GV;
+    DIE *Die;
+    ArrayRef<GlobalExpr> Exprs;
+  };
+  SmallVector<UnfinishedStaticVariable, 1> UnfinishedStaticVariables;
 
   /// DWO ID for correlating skeleton and split units.
   uint64_t DWOId = 0;
@@ -128,12 +144,6 @@ public:
   /// Get line table start symbol for this unit.
   MCSymbol *getLineTableStartSym() const { return LineTableStartSym; }
 
-  /// A pair of GlobalVariable and DIExpression.
-  struct GlobalExpr {
-    const GlobalVariable *Var;
-    const DIExpression *Expr;
-  };
-
   struct BaseTypeRef {
     BaseTypeRef(unsigned BitSize, dwarf::TypeKind Encoding) :
       BitSize(BitSize), Encoding(Encoding) {}
@@ -144,6 +154,9 @@ public:
 
   std::vector<BaseTypeRef> ExprRefedBaseTypes;
 
+  /// Get or create the parent DIE of the global variable.
+  DIE *getOrCreateGlobalVariableParentDIE(const DIGlobalVariable *GV,
+                                          ArrayRef<GlobalExpr> GlobalExprs);
   /// Get or create global variable DIE.
   DIE *
   getOrCreateGlobalVariableDIE(const DIGlobalVariable *GV,
@@ -270,6 +283,8 @@ public:
 
   void finishSubprogramDefinition(const DISubprogram *SP);
   void finishEntityDefinition(const DbgEntity *Entity);
+  /// Move static variable DIEs to the appropriate parent DIE.
+  void finishStaticVariableDIEs();
 
   /// Find abstract variable associated with Var.
   using InlinedEntity = DbgValueHistoryMap::InlinedEntity;

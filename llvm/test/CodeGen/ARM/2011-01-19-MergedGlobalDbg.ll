@@ -11,7 +11,6 @@ target triple = "thumbv7-apple-darwin10"
 @x5 = global i8 1, align 1, !dbg !10
 
 ; CHECK: DW_TAG_variable
-; CHECK-NOT: DW_TAG
 ; CHECK:    DW_AT_name {{.*}} "x1"
 ; CHECK-NOT: {{DW_TAG|NULL}}
 ; CHECK:    DW_AT_location [DW_FORM_exprloc]        (DW_OP_addr [[ADDR:0x[0-9a-fA-F]+]])
@@ -137,4 +136,3 @@ attributes #1 = { nounwind readnone }
 !51 = distinct !DILexicalBlock(scope: !47, file: !2, line: 16)
 !52 = !DILocation(line: 16, scope: !47)
 !53 = !DILocation(line: 16, scope: !51)
-
