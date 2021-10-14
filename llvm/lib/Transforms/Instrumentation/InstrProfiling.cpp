@@ -26,6 +26,7 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constant.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DIBuilder.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
@@ -56,6 +57,13 @@
 using namespace llvm;
 
 #define DEBUG_TYPE "instrprof"
+
+namespace llvm {
+cl::opt<bool>
+    DebugInfoCorrelate("debug-info-correlate",
+                       cl::desc("Use debug info to correlate profiles."),
+                       cl::init(false));
+} // namespace llvm
 
 namespace {
 
@@ -922,6 +930,40 @@ InstrProfiling::getOrCreateRegionCounters(InstrProfIncrementInst *Inc) {
   CounterPtr->setAlignment(Align(8));
   MaybeSetComdat(CounterPtr);
   CounterPtr->setLinkage(Linkage);
+  PD.RegionCounters = CounterPtr;
+  if (DebugInfoCorrelate) {
+    if (auto *SP = Fn->getSubprogram()) {
+      DIBuilder DB(*M, true, SP->getUnit());
+      // TODO: Set the DW_AT_artificial attribute.
+      Metadata *FunctionNameAnnotation[] = {
+          MDString::get(Ctx, "Function Name"),
+          MDString::get(Ctx, getPGOFuncNameVarInitializer(NamePtr)),
+      };
+      Metadata *CFGHashAnnotation[] = {
+          MDString::get(Ctx, "CFG Hash"),
+          DB.createConstantValueExpression(Inc->getHash()->getZExtValue()),
+      };
+      Metadata *NumCountersAnnotation[] = {
+          MDString::get(Ctx, "Num Counters"),
+          DB.createConstantValueExpression(NumCounters),
+      };
+      auto Annotations = DB.getOrCreateArray({
+          MDNode::get(Ctx, FunctionNameAnnotation),
+          MDNode::get(Ctx, CFGHashAnnotation),
+          MDNode::get(Ctx, NumCountersAnnotation),
+      });
+      auto *DICounter = DB.createGlobalVariableExpression(
+          SP, CounterPtr->getName(), /*LinkageName=*/StringRef(), SP->getFile(),
+          /*LineNo=*/0, DB.createUnspecifiedType("Profile Data Type"),
+          CounterPtr->hasLocalLinkage(), /*IsDefined=*/true, /*Expr=*/nullptr,
+          /*Decl=*/nullptr, /*TemplateParams=*/nullptr, /*AlignInBits=*/0,
+          Annotations);
+      CounterPtr->addDebugInfo(DICounter);
+      DB.finalize();
+    }
+    ProfileDataMap[NamePtr] = PD;
+    return CounterPtr;
+  }
 
   auto *Int8PtrTy = Type::getInt8PtrTy(Ctx);
   // Allocate statically the array of pointers to value profile nodes for
@@ -1000,7 +1042,6 @@ InstrProfiling::getOrCreateRegionCounters(InstrProfIncrementInst *Inc) {
   MaybeSetComdat(Data);
   Data->setLinkage(Linkage);
 
-  PD.RegionCounters = CounterPtr;
   PD.DataVar = Data;
   ProfileDataMap[NamePtr] = PD;
 

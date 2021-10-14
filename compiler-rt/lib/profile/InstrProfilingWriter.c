@@ -259,6 +259,8 @@ lprofWriteDataImpl(ProfDataWriter *Writer, const __llvm_profile_data *DataBegin,
                    const uint64_t *CountersBegin, const uint64_t *CountersEnd,
                    VPDataReaderType *VPDataReader, const char *NamesBegin,
                    const char *NamesEnd, int SkipNameDataWrite) {
+  int DebugInfoCorrelate =
+      (__llvm_profile_get_version() & VARIANT_MASK_DBG_CORRELATE) != 0ULL;
 
   /* Calculate size of sections. */
   const uint64_t DataSize = __llvm_profile_get_data_size(DataBegin, DataEnd);
@@ -268,7 +270,7 @@ lprofWriteDataImpl(ProfDataWriter *Writer, const __llvm_profile_data *DataBegin,
   /* Create the header. */
   __llvm_profile_header Header;
 
-  if (!DataSize)
+  if (!CountersSize)
     return 0;
 
   /* Determine how much padding is needed before/after the counters and after
@@ -293,6 +295,16 @@ lprofWriteDataImpl(ProfDataWriter *Writer, const __llvm_profile_data *DataBegin,
   ProfDataIOVec IOVec[] = {{&Header, sizeof(__llvm_profile_header), 1, 0}};
   if (Writer->Write(Writer, IOVec, sizeof(IOVec) / sizeof(*IOVec)))
     return -1;
+
+  if (DebugInfoCorrelate) {
+    ProfDataIOVec IOVecData[] = {
+        {CountersBegin, sizeof(uint64_t), CountersSize, 0},
+        {NULL, sizeof(uint8_t), PaddingBytesAfterCounters, 1},
+    };
+    // TODO: implement merging.
+    return Writer->Write(Writer, IOVecData,
+                         sizeof(IOVecData) / sizeof(*IOVecData));
+  }
 
   /* Write the binary id lengths and data. */
   if (__llvm_write_binary_ids(Writer) == -1)
