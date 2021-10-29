@@ -10,6 +10,7 @@
 #define LLVM_MIP_MIP_H
 
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/DebugInfo/DIContext.h"
 #include <string>
 #include <vector>
 
@@ -60,6 +61,8 @@ struct MFProfile {
   SmallVector<MBBProfile, 8> BasicBlockProfiles;
   // Profiles of incoming machine function calls
   SmallVector<CallEdge, 8> CallEdges;
+  // Source info about this function if available
+  Optional<DILineInfo> SourceInfo;
 };
 
 // Machine IR profile data of a particular module.

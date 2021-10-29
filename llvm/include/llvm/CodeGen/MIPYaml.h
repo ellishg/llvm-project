@@ -91,6 +91,14 @@ template <> struct MappingTraits<llvm::MachineProfile::MIPHeader> {
   }
 };
 
+template <> struct MappingTraits<llvm::DILineInfo> {
+  static void mapping(IO &io, llvm::DILineInfo &Info) {
+    io.mapRequired("File Name", Info.FileName);
+    io.mapRequired("Function Name", Info.FunctionName);
+    io.mapRequired("Line", Info.Line);
+  }
+};
+
 template <> struct MappingTraits<llvm::MachineProfile::MFProfile> {
   static void mapping(IO &io, llvm::MachineProfile::MFProfile &Profile) {
     io.mapRequired("Function Name", Profile.FunctionName);
@@ -108,6 +116,7 @@ template <> struct MappingTraits<llvm::MachineProfile::MFProfile> {
     io.mapRequired("Function Order Sum", Profile.FunctionOrderSum);
     io.mapRequired("Basic Block Profiles", Profile.BasicBlockProfiles);
     io.mapRequired("Call Edges", Profile.CallEdges);
+    io.mapOptional("Source Info", Profile.SourceInfo);
   }
 };
 

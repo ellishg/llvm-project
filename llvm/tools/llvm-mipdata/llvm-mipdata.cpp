@@ -80,7 +80,7 @@ cl::opt<bool>
 
 cl::opt<std::string> DebugInfoFilename(
     "debug", cl::value_desc("debug info"), cl::sub(ShowSubCommand),
-    cl::sub(CoveredSubCommand),
+    cl::sub(CoveredSubCommand), cl::sub(MIP2YamlSubCommand),
     cl::desc("Use <debug info> to include source info in the profile data."));
 
 cl::opt<std::string> YamlFilename(cl::Positional, cl::init("-"),
@@ -93,6 +93,12 @@ cl::opt<bool> ShowLinesOption(
 cl::opt<bool> ShowPathsOption(
     "paths", cl::sub(CoveredSubCommand),
     cl::desc("List paths that are covered (requires --debug)."));
+
+cl::opt<std::string> Arch(
+    "arch", cl::init("arm64"), cl::sub(ShowSubCommand),
+    cl::sub(CoveredSubCommand), cl::sub(MIP2YamlSubCommand),
+    cl::desc("Dump debug information for the specified CPU architecture only. "
+             "Architectures may be specified by name or by number."));
 
 std::error_code createMain() {
   auto MIPMapOrErr = MIPMapReader::read(MapFilename);
@@ -197,7 +203,7 @@ std::error_code showMain() {
 
   std::unique_ptr<SymReader> SymReader;
   if (!DebugInfoFilename.empty()) {
-    auto SymReaderOrErr = SymReader::create(DebugInfoFilename);
+    auto SymReaderOrErr = SymReader::create(DebugInfoFilename, Arch);
     if (auto EC = SymReaderOrErr.getError())
       return EC;
     SymReader = std::move(SymReaderOrErr.get());
@@ -276,7 +282,7 @@ std::error_code coveredMain() {
 
   std::unique_ptr<SymReader> SymReader;
   if (!DebugInfoFilename.empty()) {
-    auto SymReaderOrErr = SymReader::create(DebugInfoFilename);
+    auto SymReaderOrErr = SymReader::create(DebugInfoFilename, Arch);
     if (auto EC = SymReaderOrErr.getError())
       return EC;
     SymReader = std::move(SymReaderOrErr.get());
@@ -340,6 +346,18 @@ std::error_code mip2yamlMain() {
     return EC;
 
   auto MIP = std::move(MIPOrErr.get());
+  if (!DebugInfoFilename.empty()) {
+    auto SymReaderOrErr = SymReader::create(DebugInfoFilename, Arch);
+    if (auto EC = SymReaderOrErr.getError())
+      return EC;
+    auto SymReader = std::move(SymReaderOrErr.get());
+    for (auto &Profile : MIP->Profiles) {
+      auto InliningInfo =
+          SymReader->getDIInliningInfo(Profile.EncodedFunctionAddress);
+      if (InliningInfo && InliningInfo.get().getNumberOfFrames())
+        Profile.SourceInfo = InliningInfo.get().getFrame(0);
+    }
+  }
 
   yaml::Output yamlOS(OS);
   yamlOS << MIP;

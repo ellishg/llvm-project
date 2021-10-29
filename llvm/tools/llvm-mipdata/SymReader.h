@@ -27,19 +27,19 @@ class SymReader {
   expandBundle(const std::string &InputPath);
 
   static uint32_t getCPUType(const object::MachOObjectFile &MachO);
-  static bool filterArch(const object::ObjectFile &Obj);
+  static bool filterArch(const object::ObjectFile &Obj, const StringRef Arch);
 
 public:
-  SymReader(object::ObjectFile *Obj, bool Demangle);
+  SymReader(object::ObjectFile *Obj, const StringRef Arch, bool Demangle);
   virtual ~SymReader() = default;
 
   SymReader(SymReader &) = delete;
   SymReader &operator=(SymReader &) = delete;
 
-  static ErrorOr<std::unique_ptr<SymReader>> create(const Twine &Filename,
-                                                    bool Demangle = true);
+  static ErrorOr<std::unique_ptr<SymReader>>
+  create(const Twine &Filename, const StringRef Arch, bool Demangle = true);
 
-  Expected<DIInliningInfo> getDIInliningInfo(int64_t MIPRawOffset);
+  Expected<DIInliningInfo> getDIInliningInfo(int64_t MIPRawOffset) const;
 };
 
 } // namespace MachineProfile

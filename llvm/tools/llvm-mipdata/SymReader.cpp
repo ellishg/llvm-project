@@ -23,22 +23,6 @@ using namespace llvm;
 using namespace llvm::object;
 using namespace llvm::MachineProfile;
 
-/// @}
-/// Command line options.
-/// @{
-
-namespace {
-
-static cl::opt<std::string>
-    Arch("arch", cl::init("arm64"),
-         cl::desc("Dump debug information for the specified CPU "
-                  "architecture only. Architectures may be specified by "
-                  "name or by number."));
-
-} // namespace
-/// @}
-//===----------------------------------------------------------------------===//
-
 uint32_t SymReader::getCPUType(const MachOObjectFile &MachO) {
   if (MachO.is64Bit())
     return MachO.getHeader64().cputype;
@@ -47,13 +31,13 @@ uint32_t SymReader::getCPUType(const MachOObjectFile &MachO) {
 }
 
 /// Return true if the object file has not been filtered by an --arch option.
-bool SymReader::filterArch(const ObjectFile &Obj) {
+bool SymReader::filterArch(const ObjectFile &Obj, const StringRef Arch) {
   if (Arch.empty())
     return true;
 
   if (auto *MachO = dyn_cast<MachOObjectFile>(&Obj)) {
     unsigned Value;
-    if (!StringRef(Arch).getAsInteger(0, Value))
+    if (!Arch.getAsInteger(0, Value))
       if (Value == getCPUType(*MachO))
         return true;
 
@@ -102,7 +86,7 @@ SymReader::expandBundle(const std::string &InputPath) {
   return BundlePaths;
 }
 
-SymReader::SymReader(ObjectFile *Obj, bool Demangle) {
+SymReader::SymReader(ObjectFile *Obj, const StringRef Arch, bool Demangle) {
   SymbolFilePath = Obj->getFileName().str();
 
   for (auto &Section : Obj->sections()) {
@@ -118,20 +102,21 @@ SymReader::SymReader(ObjectFile *Obj, bool Demangle) {
   SymbolizerOpts.PrintFunctions =
       DILineInfoSpecifier::FunctionNameKind::LinkageName;
   SymbolizerOpts.Demangle = Demangle;
-  SymbolizerOpts.DefaultArch = Arch;
+  SymbolizerOpts.DefaultArch = Arch.str();
   SymbolizerOpts.UseSymbolTable = false;
   SymbolizerOpts.RelativeAddresses = false;
   Symbolizer = std::make_unique<symbolize::LLVMSymbolizer>(SymbolizerOpts);
 }
 
-Expected<DIInliningInfo> SymReader::getDIInliningInfo(int64_t MIPRawOffset) {
+Expected<DIInliningInfo>
+SymReader::getDIInliningInfo(int64_t MIPRawOffset) const {
   auto Addr = object::SectionedAddress{MIPRawSectionBeginAddress + MIPRawOffset,
                                        object::SectionedAddress::UndefSection};
   return Symbolizer->symbolizeInlinedCode(SymbolFilePath, Addr);
 }
 
-ErrorOr<std::unique_ptr<SymReader>> SymReader::create(const Twine &InputPath,
-                                                      bool Demangle) {
+ErrorOr<std::unique_ptr<SymReader>>
+SymReader::create(const Twine &InputPath, const StringRef Arch, bool Demangle) {
   auto ObjsOrErr = expandBundle(InputPath.str());
   if (auto EC = ObjsOrErr.getError())
     return EC;
@@ -153,14 +138,14 @@ ErrorOr<std::unique_ptr<SymReader>> SymReader::create(const Twine &InputPath,
     return EC;
 
   if (auto *Obj = dyn_cast<ObjectFile>(BinOrErr->get())) {
-    return std::make_unique<SymReader>(Obj, Demangle);
+    return std::make_unique<SymReader>(Obj, Arch, Demangle);
   } else if (auto *Fat = dyn_cast<MachOUniversalBinary>(BinOrErr->get())) {
     for (auto &ObjForArch : Fat->objects()) {
       if (auto MachOOrErr = ObjForArch.getAsObjectFile()) {
         auto &MachO = **MachOOrErr;
-        if (filterArch(MachO)) {
+        if (filterArch(MachO, Arch)) {
           // Consider object file that is matched only.
-          return std::make_unique<SymReader>(&MachO, Demangle);
+          return std::make_unique<SymReader>(&MachO, Arch, Demangle);
         }
       }
     }
