@@ -1,5 +1,6 @@
-; RUN: opt < %s -instrprof -debug-info-correlate -S | FileCheck %s
-; RUN: opt < %s -instrprof -debug-info-correlate -S | llc -mtriple=arm64-unknown-linux-gnu | FileCheck %s --check-prefix CHECK-ASM
+; RUN: opt < %s -instrprof -debug-info-correlate -S > %t.ll
+; RUN: FileCheck < %t.ll %s
+; RUN: llc < %t.ll -mtriple=arm64-unknown-linux-gnu | FileCheck %s --check-prefix CHECK-ASM
 
 target triple = "aarch64-unknown-linux-gnu"
 
@@ -16,6 +17,8 @@ target triple = "aarch64-unknown-linux-gnu"
 ; CHECK:      ![[NAME]] = !{!"Function Name", !"foo"}
 ; CHECK:      ![[HASH]] = !{!"CFG Hash", !DIExpression(DW_OP_constu, 12345678,
 ; CHECK:      ![[COUNTERS]] = !{!"Num Counters", !DIExpression(DW_OP_constu, 2,
+
+; TODO: Value profiling!
 
 ; CHECK-ASM-NOT: .section   __llvm_prf_data
 ; CHECK-ASM-NOT: .section   __llvm_prf_names

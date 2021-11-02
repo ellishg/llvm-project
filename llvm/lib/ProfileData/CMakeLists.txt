@@ -1,6 +1,7 @@
 add_llvm_component_library(LLVMProfileData
   GCOV.cpp
   InstrProf.cpp
+  InstrProfCorrelator.cpp
   InstrProfReader.cpp
   InstrProfWriter.cpp
   ProfileSummaryBuilder.cpp
@@ -18,6 +19,8 @@ add_llvm_component_library(LLVMProfileData
   Core
   Support
   Demangle
+  Object
+  DebugInfoDWARF
   )
 
 add_subdirectory(Coverage)

@@ -41,6 +41,7 @@
 #include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/ProfileData/InstrProf.h"
+#include "llvm/ProfileData/InstrProfCorrelator.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
@@ -652,6 +653,12 @@ void InstrProfiling::computeNumValueSiteCounts(InstrProfValueProfileInst *Ind) {
 }
 
 void InstrProfiling::lowerValueProfileInst(InstrProfValueProfileInst *Ind) {
+  // TODO: Value profiling heavily depends on the data section which is omitted
+  // in lightweight mode. We need to move the value profile pointer to the
+  // Counter struct.
+  assert(
+      !DebugInfoCorrelate &&
+      "Value profiling is not yet supported with lightweight instrumentation");
   GlobalVariable *Name = Ind->getName();
   auto It = ProfileDataMap.find(Name);
   assert(It != ProfileDataMap.end() && It->second.DataVar &&
@@ -936,15 +943,15 @@ InstrProfiling::getOrCreateRegionCounters(InstrProfIncrementInst *Inc) {
       DIBuilder DB(*M, true, SP->getUnit());
       // TODO: Set the DW_AT_artificial attribute.
       Metadata *FunctionNameAnnotation[] = {
-          MDString::get(Ctx, "Function Name"),
+          MDString::get(Ctx, InstrProfCorrelator::FunctionNameAttributeName),
           MDString::get(Ctx, getPGOFuncNameVarInitializer(NamePtr)),
       };
       Metadata *CFGHashAnnotation[] = {
-          MDString::get(Ctx, "CFG Hash"),
+          MDString::get(Ctx, InstrProfCorrelator::CFGHashAttributeName),
           DB.createConstantValueExpression(Inc->getHash()->getZExtValue()),
       };
       Metadata *NumCountersAnnotation[] = {
-          MDString::get(Ctx, "Num Counters"),
+          MDString::get(Ctx, InstrProfCorrelator::NumCountersAttributeName),
           DB.createConstantValueExpression(NumCounters),
       };
       auto Annotations = DB.getOrCreateArray({
@@ -961,8 +968,6 @@ InstrProfiling::getOrCreateRegionCounters(InstrProfIncrementInst *Inc) {
       CounterPtr->addDebugInfo(DICounter);
       DB.finalize();
     }
-    ProfileDataMap[NamePtr] = PD;
-    return CounterPtr;
   }
 
   auto *Int8PtrTy = Type::getInt8PtrTy(Ctx);
@@ -985,6 +990,11 @@ InstrProfiling::getOrCreateRegionCounters(InstrProfIncrementInst *Inc) {
     MaybeSetComdat(ValuesVar);
     ValuesPtrExpr =
         ConstantExpr::getBitCast(ValuesVar, Type::getInt8PtrTy(Ctx));
+  }
+
+  if (DebugInfoCorrelate) {
+    ProfileDataMap[NamePtr] = PD;
+    return CounterPtr;
   }
 
   // Create data variable.

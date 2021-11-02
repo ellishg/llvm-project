@@ -110,6 +110,15 @@ static std::string getInstrProfErrString(instrprof_error Err,
   case instrprof_error::malformed:
     OS << "malformed instrumentation profile data";
     break;
+  case instrprof_error::missing_debug_info_for_correlation:
+    OS << "debug info for correlation is required";
+    break;
+  case instrprof_error::unexpected_debug_info_for_correlation:
+    OS << "debug info for correlation is not necessary";
+    break;
+  case instrprof_error::unable_to_correlate_profile:
+    OS << "unable to correlate profile";
+    break;
   case instrprof_error::invalid_prof:
     OS << "invalid profile created. Please file a bug "
           "at: " BUG_REPORT_URL
