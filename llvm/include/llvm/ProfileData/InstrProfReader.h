@@ -100,6 +100,9 @@ public:
   /// Return true if we must provide debug info to create PGO profiles.
   virtual bool useDebugInfoCorrelate() const { return false; }
 
+  /// Return true if the profile has single byte counters representing coverage.
+  virtual bool useSingleByteCoverage() const = 0;
+
   /// Return the PGO symtab. There are three different readers:
   /// Raw, Text, and Indexed profile readers. The first two types
   /// of readers are used only by llvm-profdata tool, while the indexed
@@ -179,6 +182,7 @@ private:
   bool IsIRLevelProfile = false;
   bool HasCSIRLevelProfile = false;
   bool InstrEntryBBEnabled = false;
+  bool UseSingleByteCoverage = false;
 
   Error readValueProfileData(InstrProfRecord &Record);
 
@@ -196,6 +200,8 @@ public:
   bool hasCSIRLevelProfile() const override { return HasCSIRLevelProfile; }
 
   bool instrEntryBBEnabled() const override { return InstrEntryBBEnabled; }
+
+  bool useSingleByteCoverage() const override { return UseSingleByteCoverage; }
 
   /// Read the header.
   Error readHeader() override;
@@ -273,6 +279,10 @@ public:
 
   bool useDebugInfoCorrelate() const override {
     return (Version & VARIANT_MASK_DBG_CORRELATE) != 0;
+  }
+
+  bool useSingleByteCoverage() const override {
+    return (Version & VARIANT_MASK_BYTE_COVERAGE) != 0;
   }
 
   InstrProfSymtab &getSymtab() override {
@@ -412,6 +422,7 @@ struct InstrProfReaderIndexBase {
   virtual bool isIRLevelProfile() const = 0;
   virtual bool hasCSIRLevelProfile() const = 0;
   virtual bool instrEntryBBEnabled() const = 0;
+  virtual bool useSingleByteCoverage() const = 0;
   virtual Error populateSymtab(InstrProfSymtab &) = 0;
 };
 
@@ -462,6 +473,10 @@ public:
 
   bool instrEntryBBEnabled() const override {
     return (FormatVersion & VARIANT_MASK_INSTR_ENTRY) != 0;
+  }
+
+  bool useSingleByteCoverage() const override {
+    return (FormatVersion & VARIANT_MASK_BYTE_COVERAGE) != 0;
   }
 
   Error populateSymtab(InstrProfSymtab &Symtab) override {
@@ -520,6 +535,10 @@ public:
 
   bool instrEntryBBEnabled() const override {
     return Index->instrEntryBBEnabled();
+  }
+
+  bool useSingleByteCoverage() const override {
+    return Index->useSingleByteCoverage();
   }
 
   /// Return true if the given buffer is in an indexed instrprof format.

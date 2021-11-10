@@ -178,7 +178,7 @@ int llvm::Intrinsic::lookupLLVMIntrinsicByName(ArrayRef<const char *> NameTable,
   return -1;
 }
 
-Value *InstrProfIncrementInst::getStep() const {
+Value *InstrProfIncrementInst::getIncrementValue() const {
   if (InstrProfIncrementInstStep::classof(this)) {
     return const_cast<Value *>(getArgOperand(4));
   }

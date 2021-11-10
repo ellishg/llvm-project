@@ -54,6 +54,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringRef.h"
@@ -223,6 +224,10 @@ static cl::opt<bool>
     PGOInstrSelect("pgo-instr-select", cl::init(true), cl::Hidden,
                    cl::desc("Use this option to turn on/off SELECT "
                             "instruction instrumentation. "));
+
+static cl::opt<bool> CoverageInstrumentation(
+    "pgo-coverage-instrumentation", cl::init(false), cl::Hidden, cl::ZeroOrMore,
+    cl::desc("Use this option to enable coverage instrumentation."));
 
 // Command line option to turn on CFG dot or text dump of raw profile counts
 static cl::opt<PGOViewCountsType> PGOViewRawCounts(
@@ -469,9 +474,9 @@ private:
     createProfileFileNameVar(M, InstrProfileOutput);
     // The variable in a comdat may be discarded by LTO. Ensure the
     // declaration will be retained.
-    appendToCompilerUsed(M, createIRLevelProfileFlagVar(M, /*IsCS=*/true,
-                                                        PGOInstrumentEntry,
-                                                        DebugInfoCorrelate));
+    appendToCompilerUsed(M, createIRLevelProfileFlagVar(
+                                M, /*IsCS=*/true, PGOInstrumentEntry,
+                                DebugInfoCorrelate, CoverageInstrumentation));
     return false;
   }
   std::string InstrProfileOutput;
@@ -594,9 +599,11 @@ public:
   // The Minimum Spanning Tree of function CFG.
   CFGMST<Edge, BBInfo> MST;
 
+  bool InstrumentCoverage;
+
   // Collect all the BBs that will be instrumented, and store them in
   // InstrumentBBs.
-  void getInstrumentBBs(std::vector<BasicBlock *> &InstrumentBBs);
+  void getInstrumentBBs(SetVector<BasicBlock *> &InstrumentBBs);
 
   // Give an edge, find the BB that will be instrumented.
   // Return nullptr if there is no BB to be instrumented.
@@ -619,10 +626,11 @@ public:
       std::unordered_multimap<Comdat *, GlobalValue *> &ComdatMembers,
       bool CreateGlobalVar = false, BranchProbabilityInfo *BPI = nullptr,
       BlockFrequencyInfo *BFI = nullptr, bool IsCS = false,
-      bool InstrumentFuncEntry = true)
+      bool InstrumentFuncEntry = true, bool InstrumentCoverage = false)
       : F(Func), IsCS(IsCS), ComdatMembers(ComdatMembers), VPC(Func, TLI),
         ValueSites(IPVK_Last + 1), SIVisitor(Func),
-        MST(F, InstrumentFuncEntry, BPI, BFI) {
+        MST(F, InstrumentFuncEntry, BPI, BFI),
+        InstrumentCoverage(InstrumentCoverage) {
     // This should be done before CFG hash computation.
     SIVisitor.countSelects(Func);
     ValueSites[IPVK_MemOPSize] = VPC.get(IPVK_MemOPSize);
@@ -785,7 +793,13 @@ void FuncPGOInstrumentation<Edge, BBInfo>::renameComdatFunction() {
 // InstrumentBBs and setup InEdges/OutEdge for UseBBInfo.
 template <class Edge, class BBInfo>
 void FuncPGOInstrumentation<Edge, BBInfo>::getInstrumentBBs(
-    std::vector<BasicBlock *> &InstrumentBBs) {
+    SetVector<BasicBlock *> &InstrumentBBs) {
+  if (InstrumentCoverage) {
+    // Conservatively instrument all edges.
+    for (auto &E : MST.AllEdges)
+      E->InMST = false;
+  }
+
   // Use a worklist as we will update the vector during the iteration.
   std::vector<Edge *> EdgeList;
   EdgeList.reserve(MST.AllEdges.size());
@@ -795,7 +809,7 @@ void FuncPGOInstrumentation<Edge, BBInfo>::getInstrumentBBs(
   for (auto &E : EdgeList) {
     BasicBlock *InstrBB = getInstrBB(E);
     if (InstrBB)
-      InstrumentBBs.push_back(InstrBB);
+      InstrumentBBs.insert(InstrBB);
   }
 
   // Set up InEdges/OutEdges for all BBs.
@@ -910,11 +924,14 @@ static void instrumentOneFunc(
   SplitIndirectBrCriticalEdges(F, BPI, BFI);
 
   FuncPGOInstrumentation<PGOEdge, BBInfo> FuncInfo(
-      F, TLI, ComdatMembers, true, BPI, BFI, IsCS, PGOInstrumentEntry);
-  std::vector<BasicBlock *> InstrumentBBs;
+      F, TLI, ComdatMembers, true, BPI, BFI, IsCS, PGOInstrumentEntry,
+      CoverageInstrumentation);
+  SetVector<BasicBlock *> InstrumentBBs;
   FuncInfo.getInstrumentBBs(InstrumentBBs);
   unsigned NumCounters =
       InstrumentBBs.size() + FuncInfo.SIVisitor.getNumOfSelectInsts();
+  if (CoverageInstrumentation)
+    NumCounters += FuncInfo.SIVisitor.getNumOfSelectInsts();
 
   uint32_t I = 0;
   Type *I8PtrTy = Type::getInt8PtrTy(M->getContext());
@@ -922,11 +939,22 @@ static void instrumentOneFunc(
     IRBuilder<> Builder(InstrBB, InstrBB->getFirstInsertionPt());
     assert(Builder.GetInsertPoint() != InstrBB->end() &&
            "Cannot get the Instrumentation point");
-    Builder.CreateCall(
-        Intrinsic::getDeclaration(M, Intrinsic::instrprof_increment),
-        {ConstantExpr::getBitCast(FuncInfo.FuncNameVar, I8PtrTy),
-         Builder.getInt64(FuncInfo.FunctionHash), Builder.getInt32(NumCounters),
-         Builder.getInt32(I++)});
+    auto Name = ConstantExpr::getBitCast(FuncInfo.FuncNameVar, I8PtrTy);
+    auto CFGHash = Builder.getInt64(FuncInfo.FunctionHash);
+    auto Index = Builder.getInt32(I++);
+    if (CoverageInstrumentation) {
+      // llvm.instrprof.cover(i8* <name>, i64 <hash>, i32 <num-counters>,
+      //                      i32 <index>)
+      Builder.CreateCall(
+          Intrinsic::getDeclaration(M, Intrinsic::instrprof_cover),
+          {Name, CFGHash, Builder.getInt32(NumCounters), Index});
+    } else {
+      // llvm.instrprof.increment(i8* <name>, i64 <hash>, i32 <num-counters>,
+      //                          i32 <index>)
+      Builder.CreateCall(
+          Intrinsic::getDeclaration(M, Intrinsic::instrprof_increment),
+          {Name, CFGHash, Builder.getInt32(NumCounters), Index});
+    }
   }
 
   // Now instrument select instructions:
@@ -1068,10 +1096,11 @@ public:
   PGOUseFunc(Function &Func, Module *Modu, TargetLibraryInfo &TLI,
              std::unordered_multimap<Comdat *, GlobalValue *> &ComdatMembers,
              BranchProbabilityInfo *BPI, BlockFrequencyInfo *BFIin,
-             ProfileSummaryInfo *PSI, bool IsCS, bool InstrumentFuncEntry)
+             ProfileSummaryInfo *PSI, bool IsCS, bool InstrumentFuncEntry,
+             bool InstrumentCoverage)
       : F(Func), M(Modu), BFI(BFIin), PSI(PSI),
         FuncInfo(Func, TLI, ComdatMembers, false, BPI, BFIin, IsCS,
-                 InstrumentFuncEntry),
+                 InstrumentFuncEntry, InstrumentCoverage),
         FreqAttr(FFA_Normal), IsCS(IsCS) {}
 
   // Read counts for the instrumented BB from profile.
@@ -1178,10 +1207,12 @@ private:
 bool PGOUseFunc::setInstrumentedCounts(
     const std::vector<uint64_t> &CountFromProfile) {
 
-  std::vector<BasicBlock *> InstrumentBBs;
+  SetVector<BasicBlock *> InstrumentBBs;
   FuncInfo.getInstrumentBBs(InstrumentBBs);
   unsigned NumCounters =
       InstrumentBBs.size() + FuncInfo.SIVisitor.getNumOfSelectInsts();
+  if (FuncInfo.InstrumentCoverage)
+    NumCounters += FuncInfo.SIVisitor.getNumOfSelectInsts();
   // The number of counters here should match the number of counters
   // in profile. Return if they mismatch.
   if (NumCounters != CountFromProfile.size()) {
@@ -1373,10 +1404,12 @@ void PGOUseFunc::populateCounters() {
         continue;
       if (!Count->CountValid) {
         if (Count->UnknownCountOutEdge == 0) {
+          assert(!FuncInfo.InstrumentCoverage);
           Count->CountValue = sumEdgeCount(Count->OutEdges);
           Count->CountValid = true;
           Changes = true;
         } else if (Count->UnknownCountInEdge == 0) {
+          assert(!FuncInfo.InstrumentCoverage);
           Count->CountValue = sumEdgeCount(Count->InEdges);
           Count->CountValid = true;
           Changes = true;
@@ -1384,6 +1417,7 @@ void PGOUseFunc::populateCounters() {
       }
       if (Count->CountValid) {
         if (Count->UnknownCountOutEdge == 1) {
+          assert(!FuncInfo.InstrumentCoverage);
           uint64_t Total = 0;
           uint64_t OutSum = sumEdgeCount(Count->OutEdges);
           // If the one of the successor block can early terminate (no-return),
@@ -1395,6 +1429,7 @@ void PGOUseFunc::populateCounters() {
           Changes = true;
         }
         if (Count->UnknownCountInEdge == 1) {
+          assert(!FuncInfo.InstrumentCoverage);
           uint64_t Total = 0;
           uint64_t InSum = sumEdgeCount(Count->InEdges);
           if (Count->CountValue > InSum)
@@ -1501,15 +1536,28 @@ void PGOUseFunc::annotateIrrLoopHeaderWeights() {
 void SelectInstVisitor::instrumentOneSelectInst(SelectInst &SI) {
   Module *M = F.getParent();
   IRBuilder<> Builder(&SI);
-  Type *Int64Ty = Builder.getInt64Ty();
-  Type *I8PtrTy = Builder.getInt8PtrTy();
-  auto *Step = Builder.CreateZExt(SI.getCondition(), Int64Ty);
-  Builder.CreateCall(
-      Intrinsic::getDeclaration(M, Intrinsic::instrprof_increment_step),
-      {ConstantExpr::getBitCast(FuncNameVar, I8PtrTy),
-       Builder.getInt64(FuncHash), Builder.getInt32(TotalNumCtrs),
-       Builder.getInt32(*CurCtrIdx), Step});
-  ++(*CurCtrIdx);
+  auto Name = ConstantExpr::getBitCast(FuncNameVar, Builder.getInt8PtrTy());
+  auto CFGHash = Builder.getInt64(FuncHash);
+  auto NumCounters = Builder.getInt32(TotalNumCtrs);
+  unsigned &CurrentIndex = *CurCtrIdx;
+  if (CoverageInstrumentation) {
+    auto *IndexA = Builder.getInt32(CurrentIndex++);
+    auto *IndexB = Builder.getInt32(CurrentIndex++);
+    // llvm.instrprof.cover(i8* <name>, i64 <hash>, i32 <num-counters>,
+    //                      i32 <index>)
+    auto *IndexSelected =
+        Builder.CreateSelect(SI.getCondition(), IndexA, IndexB);
+    Builder.CreateCall(Intrinsic::getDeclaration(M, Intrinsic::instrprof_cover),
+                       {Name, CFGHash, NumCounters, IndexSelected});
+  } else {
+    auto *Index = Builder.getInt32(CurrentIndex++);
+    auto *Step = Builder.CreateZExt(SI.getCondition(), Builder.getInt64Ty());
+    // llvm.instrprof.increment.step(i8* <name>, i64 <hash>, i32 <num-counters>,
+    //                               i32 <index>, i64 <step>)
+    Builder.CreateCall(
+        Intrinsic::getDeclaration(M, Intrinsic::instrprof_increment_step),
+        {Name, CFGHash, NumCounters, Index, Step});
+  }
 }
 
 void SelectInstVisitor::annotateOneSelectInst(SelectInst &SI) {
@@ -1620,7 +1668,7 @@ static bool InstrumentAllFunctions(
   // (before LTO/ThinLTO linking) to create these variables.
   if (!IsCS)
     createIRLevelProfileFlagVar(M, /*IsCS=*/false, PGOInstrumentEntry,
-                                DebugInfoCorrelate);
+                                DebugInfoCorrelate, CoverageInstrumentation);
   std::unordered_multimap<Comdat *, GlobalValue *> ComdatMembers;
   collectComdatMembers(M, ComdatMembers);
 
@@ -1642,9 +1690,9 @@ PGOInstrumentationGenCreateVar::run(Module &M, ModuleAnalysisManager &AM) {
   createProfileFileNameVar(M, CSInstrName);
   // The variable in a comdat may be discarded by LTO. Ensure the declaration
   // will be retained.
-  appendToCompilerUsed(M, createIRLevelProfileFlagVar(M, /*IsCS=*/true,
-                                                      PGOInstrumentEntry,
-                                                      DebugInfoCorrelate));
+  appendToCompilerUsed(M, createIRLevelProfileFlagVar(
+                              M, /*IsCS=*/true, PGOInstrumentEntry,
+                              DebugInfoCorrelate, CoverageInstrumentation));
   return PreservedAnalyses::all();
 }
 
@@ -1858,6 +1906,7 @@ static bool annotateAllFunctions(
   // If the profile marked as always instrument the entry BB, do the
   // same. Note this can be overwritten by the internal option in CFGMST.h
   bool InstrumentFuncEntry = PGOReader->instrEntryBBEnabled();
+  bool InstrumentCoverage = PGOReader->useSingleByteCoverage();
   if (PGOInstrumentEntry.getNumOccurrences() > 0)
     InstrumentFuncEntry = PGOInstrumentEntry;
   for (auto &F : M) {
@@ -1870,7 +1919,7 @@ static bool annotateAllFunctions(
     // later in getInstrBB() to avoid invalidating it.
     SplitIndirectBrCriticalEdges(F, BPI, BFI);
     PGOUseFunc Func(F, &M, TLI, ComdatMembers, BPI, BFI, PSI, IsCS,
-                    InstrumentFuncEntry);
+                    InstrumentFuncEntry, InstrumentCoverage);
     // When AllMinusOnes is true, it means the profile for the function
     // is unrepresentative and this function is actually hot. Set the
     // entry count of the function to be multiple times of hot threshold

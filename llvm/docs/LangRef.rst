@@ -13118,6 +13118,32 @@ Semantics:
 """"""""""
 See description of '``llvm.instrprof.increment``' intrinsic.
 
+'``llvm.instrprof.cover``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+
+::
+
+      declare void @llvm.instrprof.cover(i8* <name>, i64 <hash>,
+                                         i32 <num-counters>, i32 <index>)
+
+Overview:
+"""""""""
+
+The '``llvm.instrprof.cover``' intrinsic is an extension to the
+'``llvm.instrprof.increment``' intrinsic.
+
+Arguments:
+""""""""""
+The arguments are the same as '``llvm.instrprof.increment``'.
+
+Semantics:
+""""""""""
+Similar to the '``llvm.instrprof.increment``' intrinsic, but it stores zero to
+the profiling variable to signify that the block has been covered. We store zero
+because this is more efficient on some targets.
 
 '``llvm.instrprof.value.profile``' Intrinsic
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -278,6 +278,7 @@ static void loadInput(const WeightedFile &Input, SymbolRemapper *Remapper,
     return;
   }
   WC->Writer.setInstrEntryBBEnabled(Reader->instrEntryBBEnabled());
+  WC->Writer.setUseSingleByteCoverage(Reader->useSingleByteCoverage());
 
   for (auto &I : *Reader) {
     if (Remapper)

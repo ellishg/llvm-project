@@ -1124,16 +1124,9 @@ public:
   Value *getSrc() const { return const_cast<Value *>(getArgOperand(1)); }
 };
 
-/// This represents the llvm.instrprof_increment intrinsic.
-class InstrProfIncrementInst : public IntrinsicInst {
+/// A base class for all instrprof intrinsics.
+class InstrProfBase : public IntrinsicInst {
 public:
-  static bool classof(const IntrinsicInst *I) {
-    return I->getIntrinsicID() == Intrinsic::instrprof_increment;
-  }
-  static bool classof(const Value *V) {
-    return isa<IntrinsicInst>(V) && classof(cast<IntrinsicInst>(V));
-  }
-
   GlobalVariable *getName() const {
     return cast<GlobalVariable>(
         const_cast<Value *>(getArgOperand(0))->stripPointerCasts());
@@ -1142,18 +1135,43 @@ public:
   ConstantInt *getHash() const {
     return cast<ConstantInt>(const_cast<Value *>(getArgOperand(1)));
   }
-
-  ConstantInt *getNumCounters() const {
-    return cast<ConstantInt>(const_cast<Value *>(getArgOperand(2)));
-  }
-
-  ConstantInt *getIndex() const {
-    return cast<ConstantInt>(const_cast<Value *>(getArgOperand(3)));
-  }
-
-  Value *getStep() const;
 };
 
+/// A base class for llvm.instrprof.cover.* and llvm.instrprof.increment.*
+/// intrinsics.
+class InstrProfCFGBase : public InstrProfBase {
+public:
+  ConstantInt *getProbeCount() const {
+    return cast<ConstantInt>(const_cast<Value *>(getArgOperand(2)));
+  }
+  Value *getProbeIndex() const { return const_cast<Value *>(getArgOperand(3)); }
+};
+
+/// This represents the llvm.instrprof.cover intrinsic.
+class InstrProfCoverInst : public InstrProfCFGBase {
+public:
+  static bool classof(const IntrinsicInst *I) {
+    return I->getIntrinsicID() == Intrinsic::instrprof_cover;
+  }
+  static bool classof(const Value *V) {
+    return isa<IntrinsicInst>(V) && classof(cast<IntrinsicInst>(V));
+  }
+};
+
+/// This represents the llvm.instrprof.increment intrinsic.
+class InstrProfIncrementInst : public InstrProfCFGBase {
+public:
+  static bool classof(const IntrinsicInst *I) {
+    return I->getIntrinsicID() == Intrinsic::instrprof_increment;
+  }
+  static bool classof(const Value *V) {
+    return isa<IntrinsicInst>(V) && classof(cast<IntrinsicInst>(V));
+  }
+
+  Value *getIncrementValue() const;
+};
+
+/// This represents the llvm.instrprof.increment.step intrinsic.
 class InstrProfIncrementInstStep : public InstrProfIncrementInst {
 public:
   static bool classof(const IntrinsicInst *I) {
@@ -1164,23 +1182,14 @@ public:
   }
 };
 
-/// This represents the llvm.instrprof_value_profile intrinsic.
-class InstrProfValueProfileInst : public IntrinsicInst {
+/// This represents the llvm.instrprof.value.profile intrinsic.
+class InstrProfValueProfileInst : public InstrProfBase {
 public:
   static bool classof(const IntrinsicInst *I) {
     return I->getIntrinsicID() == Intrinsic::instrprof_value_profile;
   }
   static bool classof(const Value *V) {
     return isa<IntrinsicInst>(V) && classof(cast<IntrinsicInst>(V));
-  }
-
-  GlobalVariable *getName() const {
-    return cast<GlobalVariable>(
-        const_cast<Value *>(getArgOperand(0))->stripPointerCasts());
-  }
-
-  ConstantInt *getHash() const {
-    return cast<ConstantInt>(const_cast<Value *>(getArgOperand(1)));
   }
 
   Value *getTargetValue() const {

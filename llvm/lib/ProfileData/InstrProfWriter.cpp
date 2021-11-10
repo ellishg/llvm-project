@@ -166,8 +166,10 @@ public:
 
 } // end namespace llvm
 
-InstrProfWriter::InstrProfWriter(bool Sparse, bool InstrEntryBBEnabled)
+InstrProfWriter::InstrProfWriter(bool Sparse, bool InstrEntryBBEnabled,
+                                 bool UseSingleByteCoverage)
     : Sparse(Sparse), InstrEntryBBEnabled(InstrEntryBBEnabled),
+      UseSingleByteCoverage(UseSingleByteCoverage),
       InfoObj(new InstrProfRecordWriterTrait()) {}
 
 InstrProfWriter::~InstrProfWriter() { delete InfoObj; }
@@ -311,6 +313,8 @@ Error InstrProfWriter::writeImpl(ProfOStream &OS) {
   }
   if (InstrEntryBBEnabled)
     Header.Version |= VARIANT_MASK_INSTR_ENTRY;
+  if (UseSingleByteCoverage)
+    Header.Version |= VARIANT_MASK_BYTE_COVERAGE;
 
   Header.Unused = 0;
   Header.HashType = static_cast<uint64_t>(IndexedInstrProf::HashType);

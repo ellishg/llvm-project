@@ -455,6 +455,7 @@ Error RawInstrProfReader<IntPtrT>::readRawCounts(
   if (NumCounters == 0)
     return error(instrprof_error::malformed, "number of counters is zero");
 
+  IntPtrT CounterPtr = Data->CounterPtr;
   ptrdiff_t CounterOffset = getCounterOffset(CounterPtr);
   if (CounterOffset < 0)
     return error(
@@ -501,6 +502,12 @@ Error RawInstrProfReader<IntPtrT>::readRawCounts(
       Record.Counts.push_back(swap(Count));
   } else
     Record.Counts = RawCounts;
+
+  // TODO: Global var for cover value
+  // TODO: Specify var for scale value
+  if (useSingleByteCoverage())
+    for (auto it = Record.Counts.begin(); it != Record.Counts.end(); it++)
+      *it = (*it == 0) ? 1 : 0;
 
   return success();
 }
