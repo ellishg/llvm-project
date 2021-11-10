@@ -255,6 +255,10 @@ static cl::opt<bool> PGOInstrumentEntry(
     "pgo-instrument-entry", cl::init(false), cl::Hidden,
     cl::desc("Force to instrument function entry basicblock."));
 
+static cl::opt<bool> CoverageInstrumentation(
+    "pgo-coverage-instrumentation", cl::init(false), cl::Hidden, cl::ZeroOrMore,
+    cl::desc("Use this option to enable function coverage instrumentation."));
+
 static cl::opt<bool>
     PGOFixEntryCount("pgo-fix-entry-count", cl::init(true), cl::Hidden,
                      cl::desc("Fix function entry count in profile use."));
@@ -469,9 +473,9 @@ private:
     createProfileFileNameVar(M, InstrProfileOutput);
     // The variable in a comdat may be discarded by LTO. Ensure the
     // declaration will be retained.
-    appendToCompilerUsed(M, createIRLevelProfileFlagVar(M, /*IsCS=*/true,
-                                                        PGOInstrumentEntry,
-                                                        DebugInfoCorrelate));
+    appendToCompilerUsed(M, createIRLevelProfileFlagVar(
+                                M, /*IsCS=*/true, PGOInstrumentEntry,
+                                DebugInfoCorrelate, CoverageInstrumentation));
     return false;
   }
   std::string InstrProfileOutput;
@@ -911,22 +915,35 @@ static void instrumentOneFunc(
 
   FuncPGOInstrumentation<PGOEdge, BBInfo> FuncInfo(
       F, TLI, ComdatMembers, true, BPI, BFI, IsCS, PGOInstrumentEntry);
+
+  Type *I8PtrTy = Type::getInt8PtrTy(M->getContext());
+  auto Name = ConstantExpr::getBitCast(FuncInfo.FuncNameVar, I8PtrTy);
+  auto CFGHash = ConstantInt::get(Type::getInt64Ty(M->getContext()),
+                                  FuncInfo.FunctionHash);
+  if (CoverageInstrumentation) {
+    auto &EntryBB = F.getEntryBlock();
+    IRBuilder<> Builder(&EntryBB, EntryBB.getFirstInsertionPt());
+    Builder.CreateCall(Intrinsic::getDeclaration(M, Intrinsic::instrprof_cover),
+                       {Name, CFGHash});
+    return;
+  }
+
   std::vector<BasicBlock *> InstrumentBBs;
   FuncInfo.getInstrumentBBs(InstrumentBBs);
   unsigned NumCounters =
       InstrumentBBs.size() + FuncInfo.SIVisitor.getNumOfSelectInsts();
 
   uint32_t I = 0;
-  Type *I8PtrTy = Type::getInt8PtrTy(M->getContext());
   for (auto *InstrBB : InstrumentBBs) {
     IRBuilder<> Builder(InstrBB, InstrBB->getFirstInsertionPt());
     assert(Builder.GetInsertPoint() != InstrBB->end() &&
            "Cannot get the Instrumentation point");
+    auto Index = Builder.getInt32(I++);
+    // llvm.instrprof.increment(i8* <name>, i64 <hash>, i32 <num-counters>,
+    //                          i32 <index>)
     Builder.CreateCall(
         Intrinsic::getDeclaration(M, Intrinsic::instrprof_increment),
-        {ConstantExpr::getBitCast(FuncInfo.FuncNameVar, I8PtrTy),
-         Builder.getInt64(FuncInfo.FunctionHash), Builder.getInt32(NumCounters),
-         Builder.getInt32(I++)});
+        {Name, CFGHash, Builder.getInt32(NumCounters), Index});
   }
 
   // Now instrument select instructions:
@@ -1499,6 +1516,8 @@ void PGOUseFunc::annotateIrrLoopHeaderWeights() {
 }
 
 void SelectInstVisitor::instrumentOneSelectInst(SelectInst &SI) {
+  if (CoverageInstrumentation)
+    return;
   Module *M = F.getParent();
   IRBuilder<> Builder(&SI);
   Type *Int64Ty = Builder.getInt64Ty();
@@ -1620,7 +1639,7 @@ static bool InstrumentAllFunctions(
   // (before LTO/ThinLTO linking) to create these variables.
   if (!IsCS)
     createIRLevelProfileFlagVar(M, /*IsCS=*/false, PGOInstrumentEntry,
-                                DebugInfoCorrelate);
+                                DebugInfoCorrelate, CoverageInstrumentation);
   std::unordered_multimap<Comdat *, GlobalValue *> ComdatMembers;
   collectComdatMembers(M, ComdatMembers);
 
@@ -1642,9 +1661,9 @@ PGOInstrumentationGenCreateVar::run(Module &M, ModuleAnalysisManager &AM) {
   createProfileFileNameVar(M, CSInstrName);
   // The variable in a comdat may be discarded by LTO. Ensure the declaration
   // will be retained.
-  appendToCompilerUsed(M, createIRLevelProfileFlagVar(M, /*IsCS=*/true,
-                                                      PGOInstrumentEntry,
-                                                      DebugInfoCorrelate));
+  appendToCompilerUsed(M, createIRLevelProfileFlagVar(
+                              M, /*IsCS=*/true, PGOInstrumentEntry,
+                              DebugInfoCorrelate, CoverageInstrumentation));
   return PreservedAnalyses::all();
 }
 
@@ -1839,6 +1858,12 @@ static bool annotateAllFunctions(
   if (!PGOReader->isIRLevelProfile()) {
     Ctx.diagnose(DiagnosticInfoPGOProfile(
         ProfileFileName.data(), "Not an IR level instrumentation profile"));
+    return false;
+  }
+  if (PGOReader->useSingleByteEntryCoverage()) {
+    Ctx.diagnose(DiagnosticInfoPGOProfile(
+        ProfileFileName.data(),
+        "Cannot use function entry coverage profiles for optimization"));
     return false;
   }
 

@@ -100,6 +100,10 @@ public:
   /// Return true if we must provide debug info to create PGO profiles.
   virtual bool useDebugInfoCorrelate() const { return false; }
 
+  /// Return true if the profile has single byte counters representing function
+  /// entry coverage.
+  virtual bool useSingleByteEntryCoverage() const = 0;
+
   /// Return the PGO symtab. There are three different readers:
   /// Raw, Text, and Indexed profile readers. The first two types
   /// of readers are used only by llvm-profdata tool, while the indexed
@@ -179,6 +183,7 @@ private:
   bool IsIRLevelProfile = false;
   bool HasCSIRLevelProfile = false;
   bool InstrEntryBBEnabled = false;
+  bool UseSingleByteEntryCoverage = false;
 
   Error readValueProfileData(InstrProfRecord &Record);
 
@@ -196,6 +201,10 @@ public:
   bool hasCSIRLevelProfile() const override { return HasCSIRLevelProfile; }
 
   bool instrEntryBBEnabled() const override { return InstrEntryBBEnabled; }
+
+  bool useSingleByteEntryCoverage() const override {
+    return UseSingleByteEntryCoverage;
+  }
 
   /// Read the header.
   Error readHeader() override;
@@ -275,6 +284,10 @@ public:
     return (Version & VARIANT_MASK_DBG_CORRELATE) != 0;
   }
 
+  bool useSingleByteEntryCoverage() const override {
+    return (Version & VARIANT_MASK_BYTE_ENTRY_COVERAGE) != 0;
+  }
+
   InstrProfSymtab &getSymtab() override {
     assert(Symtab.get());
     return *Symtab.get();
@@ -329,7 +342,9 @@ private:
     return Symtab->getFuncName(swap(NameRef));
   }
 
-  int getCounterTypeSize() const { return sizeof(uint64_t); }
+  int getCounterTypeSize() const {
+    return useSingleByteEntryCoverage() ? sizeof(uint8_t) : sizeof(uint64_t);
+  }
 };
 
 using RawInstrProfReader32 = RawInstrProfReader<uint32_t>;
@@ -409,6 +424,7 @@ struct InstrProfReaderIndexBase {
   virtual bool isIRLevelProfile() const = 0;
   virtual bool hasCSIRLevelProfile() const = 0;
   virtual bool instrEntryBBEnabled() const = 0;
+  virtual bool useSingleByteEntryCoverage() const = 0;
   virtual Error populateSymtab(InstrProfSymtab &) = 0;
 };
 
@@ -459,6 +475,10 @@ public:
 
   bool instrEntryBBEnabled() const override {
     return (FormatVersion & VARIANT_MASK_INSTR_ENTRY) != 0;
+  }
+
+  bool useSingleByteEntryCoverage() const override {
+    return (FormatVersion & VARIANT_MASK_BYTE_ENTRY_COVERAGE) != 0;
   }
 
   Error populateSymtab(InstrProfSymtab &Symtab) override {
@@ -517,6 +537,10 @@ public:
 
   bool instrEntryBBEnabled() const override {
     return Index->instrEntryBBEnabled();
+  }
+
+  bool useSingleByteEntryCoverage() const override {
+    return Index->useSingleByteEntryCoverage();
   }
 
   /// Return true if the given buffer is in an indexed instrprof format.

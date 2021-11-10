@@ -1154,7 +1154,8 @@ void getMemOPSizeRangeFromOption(StringRef Str, int64_t &RangeStart,
 // aware this is an ir_level profile so it can set the version flag.
 GlobalVariable *createIRLevelProfileFlagVar(Module &M, bool IsCS,
                                             bool InstrEntryBBEnabled,
-                                            bool DebugInfoCorrelate);
+                                            bool DebugInfoCorrelate,
+                                            bool CoverageInstrumentation);
 
 // Create the variable for the profile file name.
 void createProfileFileNameVar(Module &M, StringRef InstrProfileOutput);

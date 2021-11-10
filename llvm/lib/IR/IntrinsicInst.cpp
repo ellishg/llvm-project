@@ -178,6 +178,26 @@ int llvm::Intrinsic::lookupLLVMIntrinsicByName(ArrayRef<const char *> NameTable,
   return -1;
 }
 
+ConstantInt *InstrProfBase::getNumCounters() const {
+  if (InstrProfCoverInst::classof(this)) {
+    const auto *M = getModule();
+    return ConstantInt::get(Type::getInt64Ty(M->getContext()), 1);
+  } else if (InstrProfValueProfileInst::classof(this)) {
+    llvm_unreachable("InstrProfValueProfileInst does not have counters!");
+  }
+  return cast<ConstantInt>(const_cast<Value *>(getArgOperand(2)));
+}
+
+Value *InstrProfBase::getIndex() const {
+  if (InstrProfCoverInst::classof(this)) {
+    const auto *M = getModule();
+    return ConstantInt::get(Type::getInt64Ty(M->getContext()), 0);
+  } else if (InstrProfValueProfileInst::classof(this)) {
+    llvm_unreachable("Please use InstrProfValueProfileInst::getIndex()");
+  }
+  return const_cast<Value *>(getArgOperand(3));
+}
+
 Value *InstrProfIncrementInst::getStep() const {
   if (InstrProfIncrementInstStep::classof(this)) {
     return const_cast<Value *>(getArgOperand(4));
