@@ -86,8 +86,9 @@ const __llvm_profile_data *__llvm_profile_begin_data(void);
 const __llvm_profile_data *__llvm_profile_end_data(void);
 const char *__llvm_profile_begin_names(void);
 const char *__llvm_profile_end_names(void);
-uint64_t *__llvm_profile_begin_counters(void);
-uint64_t *__llvm_profile_end_counters(void);
+char *__llvm_profile_begin_counters(void);
+char *__llvm_profile_end_counters(void);
+size_t __llvm_profile_counter_entry_size(void);
 ValueProfNode *__llvm_profile_begin_vnodes();
 ValueProfNode *__llvm_profile_end_vnodes();
 uint32_t *__llvm_profile_begin_orderfile();
@@ -277,7 +278,7 @@ uint64_t __llvm_profile_get_data_size(const __llvm_profile_data *Begin,
  * needed to achieve that.
  */
 void __llvm_profile_get_padding_sizes_for_counters(
-    uint64_t DataSize, uint64_t CountersSize, uint64_t NamesSize,
+    uint64_t DataSize, uint64_t CountersSizeInBytes, uint64_t NamesSize,
     uint64_t *PaddingBytesBeforeCounters, uint64_t *PaddingBytesAfterCounters,
     uint64_t *PaddingBytesAfterNames);
 

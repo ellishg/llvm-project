@@ -244,8 +244,8 @@ COMPILER_RT_VISIBILITY int lprofWriteData(ProfDataWriter *Writer,
   /* Match logic in __llvm_profile_write_buffer(). */
   const __llvm_profile_data *DataBegin = __llvm_profile_begin_data();
   const __llvm_profile_data *DataEnd = __llvm_profile_end_data();
-  const uint64_t *CountersBegin = __llvm_profile_begin_counters();
-  const uint64_t *CountersEnd = __llvm_profile_end_counters();
+  const char *CountersBegin = __llvm_profile_begin_counters();
+  const char *CountersEnd = __llvm_profile_end_counters();
   const char *NamesBegin = __llvm_profile_begin_names();
   const char *NamesEnd = __llvm_profile_end_names();
   return lprofWriteDataImpl(Writer, DataBegin, DataEnd, CountersBegin,
@@ -256,7 +256,7 @@ COMPILER_RT_VISIBILITY int lprofWriteData(ProfDataWriter *Writer,
 COMPILER_RT_VISIBILITY int
 lprofWriteDataImpl(ProfDataWriter *Writer, const __llvm_profile_data *DataBegin,
                    const __llvm_profile_data *DataEnd,
-                   const uint64_t *CountersBegin, const uint64_t *CountersEnd,
+                   const char *CountersBegin, const char *CountersEnd,
                    VPDataReaderType *VPDataReader, const char *NamesBegin,
                    const char *NamesEnd, int SkipNameDataWrite) {
   int DebugInfoCorrelate =
@@ -265,7 +265,9 @@ lprofWriteDataImpl(ProfDataWriter *Writer, const __llvm_profile_data *DataBegin,
   /* Calculate size of sections. */
   const uint64_t DataSize =
       DebugInfoCorrelate ? 0 : __llvm_profile_get_data_size(DataBegin, DataEnd);
-  const uint64_t CountersSize = CountersEnd - CountersBegin;
+  const uint64_t CountersSizeInBytes = CountersEnd - CountersBegin;
+  const uint64_t CountersSize =
+      CountersSizeInBytes / __llvm_profile_counter_entry_size();
   const uint64_t NamesSize = DebugInfoCorrelate ? 0 : NamesEnd - NamesBegin;
 
   /* Create the header. */
@@ -279,7 +281,7 @@ lprofWriteDataImpl(ProfDataWriter *Writer, const __llvm_profile_data *DataBegin,
   uint64_t PaddingBytesBeforeCounters, PaddingBytesAfterCounters,
       PaddingBytesAfterNames;
   __llvm_profile_get_padding_sizes_for_counters(
-      DataSize, CountersSize, NamesSize, &PaddingBytesBeforeCounters,
+      DataSize, CountersSizeInBytes, NamesSize, &PaddingBytesBeforeCounters,
       &PaddingBytesAfterCounters, &PaddingBytesAfterNames);
 
 /* Initialize header structure.  */
@@ -312,7 +314,7 @@ lprofWriteDataImpl(ProfDataWriter *Writer, const __llvm_profile_data *DataBegin,
       {DebugInfoCorrelate ? NULL : DataBegin, sizeof(__llvm_profile_data),
        DataSize, 0},
       {NULL, sizeof(uint8_t), PaddingBytesBeforeCounters, 1},
-      {CountersBegin, sizeof(uint64_t), CountersSize, 0},
+      {CountersBegin, sizeof(uint8_t), CountersSizeInBytes, 0},
       {NULL, sizeof(uint8_t), PaddingBytesAfterCounters, 1},
       {(SkipNameDataWrite || DebugInfoCorrelate) ? NULL : NamesBegin,
        sizeof(uint8_t), NamesSize, 0},

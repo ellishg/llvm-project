@@ -106,13 +106,13 @@ static int mmapForContinuousMode(uint64_t CurrentFileOffset, FILE *File) {
    * __llvm_profile_get_size_for_buffer(). */
   const __llvm_profile_data *DataBegin = __llvm_profile_begin_data();
   const __llvm_profile_data *DataEnd = __llvm_profile_end_data();
-  const uint64_t *CountersBegin = __llvm_profile_begin_counters();
-  const uint64_t *CountersEnd = __llvm_profile_end_counters();
+  const char *CountersBegin = __llvm_profile_begin_counters();
+  const char *CountersEnd = __llvm_profile_end_counters();
   const char *NamesBegin = __llvm_profile_begin_names();
   const char *NamesEnd = __llvm_profile_end_names();
   const uint64_t NamesSize = (NamesEnd - NamesBegin) * sizeof(char);
   uint64_t DataSize = __llvm_profile_get_data_size(DataBegin, DataEnd);
-  uint64_t CountersSize = CountersEnd - CountersBegin;
+  uint64_t CountersSizeInBytes = CountersEnd - CountersBegin;
 
   /* Check that the counter and data sections in this image are
    * page-aligned. */
@@ -133,11 +133,11 @@ static int mmapForContinuousMode(uint64_t CurrentFileOffset, FILE *File) {
   uint64_t PaddingBytesBeforeCounters, PaddingBytesAfterCounters,
       PaddingBytesAfterNames;
   __llvm_profile_get_padding_sizes_for_counters(
-      DataSize, CountersSize, NamesSize, &PaddingBytesBeforeCounters,
+      DataSize, CountersSizeInBytes, NamesSize, &PaddingBytesBeforeCounters,
       &PaddingBytesAfterCounters, &PaddingBytesAfterNames);
 
   uint64_t PageAlignedCountersLength =
-      (CountersSize * sizeof(uint64_t)) + PaddingBytesAfterCounters;
+      CountersSizeInBytes + PaddingBytesAfterCounters;
   uint64_t FileOffsetToCounters =
       CurrentFileOffset + sizeof(__llvm_profile_header) +
       (DataSize * sizeof(__llvm_profile_data)) + PaddingBytesBeforeCounters;
@@ -195,8 +195,8 @@ static int mmapForContinuousMode(uint64_t CurrentFileOffset, FILE *File) {
    * __llvm_profile_get_size_for_buffer(). */
   const __llvm_profile_data *DataBegin = __llvm_profile_begin_data();
   const __llvm_profile_data *DataEnd = __llvm_profile_end_data();
-  const uint64_t *CountersBegin = __llvm_profile_begin_counters();
-  const uint64_t *CountersEnd = __llvm_profile_end_counters();
+  const char *CountersBegin = __llvm_profile_begin_counters();
+  const char *CountersEnd = __llvm_profile_end_counters();
   uint64_t DataSize = __llvm_profile_get_data_size(DataBegin, DataEnd);
   /* Get the file size. */
   uint64_t FileSize = 0;
@@ -578,9 +578,9 @@ static void initializeProfileForContinuousMode(void) {
   }
 
   /* Get the sizes of counter section. */
-  const uint64_t *CountersBegin = __llvm_profile_begin_counters();
-  const uint64_t *CountersEnd = __llvm_profile_end_counters();
-  uint64_t CountersSize = CountersEnd - CountersBegin;
+  const char *CountersBegin = __llvm_profile_begin_counters();
+  const char *CountersEnd = __llvm_profile_end_counters();
+  uint64_t CountersSizeInBytes = CountersEnd - CountersBegin;
 
   int Length = getCurFilenameLength();
   char *FilenameBuf = (char *)COMPILER_RT_ALLOCA(Length + 1);
@@ -645,7 +645,7 @@ static void initializeProfileForContinuousMode(void) {
 
   /* mmap() the profile counters so long as there is at least one counter.
    * If there aren't any counters, mmap() would fail with EINVAL. */
-  if (CountersSize > 0)
+  if (CountersSizeInBytes > 0)
     mmapForContinuousMode(CurrentFileOffset, File);
 
   if (doMerging()) {

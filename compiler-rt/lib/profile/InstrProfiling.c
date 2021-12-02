@@ -41,11 +41,15 @@ COMPILER_RT_VISIBILITY uint64_t __llvm_profile_get_version(void) {
   return INSTR_PROF_RAW_VERSION_VAR;
 }
 
-COMPILER_RT_VISIBILITY void __llvm_profile_reset_counters(void) {
-  uint64_t *I = __llvm_profile_begin_counters();
-  uint64_t *E = __llvm_profile_end_counters();
+COMPILER_RT_VISIBILITY size_t __llvm_profile_counter_entry_size(void) {
+  return sizeof(uint64_t);
+}
 
-  memset(I, 0, sizeof(uint64_t) * (E - I));
+COMPILER_RT_VISIBILITY void __llvm_profile_reset_counters(void) {
+  char *I = __llvm_profile_begin_counters();
+  char *E = __llvm_profile_end_counters();
+
+  memset(I, 0, E - I);
 
   const __llvm_profile_data *DataBegin = __llvm_profile_begin_data();
   const __llvm_profile_data *DataEnd = __llvm_profile_end_data();
