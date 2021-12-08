@@ -13,6 +13,7 @@
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/InitializePasses.h"
+#include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Target/TargetMachine.h"
 
 using namespace llvm;
@@ -59,6 +60,14 @@ cl::opt<unsigned> MIRInstrumentation::MachineProfileMinInstructionCount(
     cl::desc("Do not instrument machine function that have fewer than <N> "
              "machine instructions."));
 
+std::string MIRInstrumentation::FunctionSCLFilename;
+cl::opt<std::string, true> FunctionSCLFilenameOption(
+    "machine-profile-special-case-list",
+    cl::location(MIRInstrumentation::FunctionSCLFilename), cl::init(""),
+    cl::ZeroOrMore, cl::value_desc("scl.txt"),
+    cl::desc("Allow or block functions from being instrumented based on "
+             "<scl.txt>."));
+
 std::string MIRInstrumentation::LinkUnitName;
 cl::opt<std::string, true> MIRInstrumentation::LinkUnitNameOption(
     "link-unit-name", cl::location(MIRInstrumentation::LinkUnitName),
@@ -83,6 +92,10 @@ bool MIRInstrumentation::doInitialization(Module &M) {
     if (MachineProfileRuntimeBufferSize)
       Ctx.emitError("-" + Twine(MachineProfileRuntimeBufferSize.ArgStr) +
                     " is not yet implemented.");
+
+    if (!FunctionSCLFilename.empty())
+      SCL = SpecialCaseList::createOrDie({FunctionSCLFilename},
+                                         *vfs::getRealFileSystem());
   }
   return false;
 }
@@ -169,6 +182,12 @@ bool MIRInstrumentation::shouldInstrumentMachineFunction(
   if (MachineProfileFunctionGroupCount > 1) {
     unsigned Group = MD5Hash(Name) % MachineProfileFunctionGroupCount;
     if (Group != MachineProfileSelectedFunctionGroup)
+      return false;
+  }
+
+  if (SCL) {
+    // TODO: Add src prefix.
+    if (SCL->inSection("mip", "fun", Name, "block"))
       return false;
   }
 

@@ -11,6 +11,7 @@
 
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/SpecialCaseList.h"
 
 namespace llvm {
 
@@ -27,6 +28,8 @@ public:
   static cl::opt<unsigned> MachineProfileFunctionGroupCount;
   static cl::opt<unsigned> MachineProfileSelectedFunctionGroup;
   static cl::opt<unsigned> MachineProfileMinInstructionCount;
+  static std::string FunctionSCLFilename;
+  static cl::opt<std::string, true> FunctionSCLFilenameOption;
   static std::string LinkUnitName;
   static cl::opt<std::string, true> LinkUnitNameOption;
 
@@ -48,6 +51,8 @@ private:
   void getMachineBasicBlocks(MachineFunction &MF,
                              SmallVectorImpl<MachineBasicBlock *> &MBBs) const;
   void runOnMachineBasicBlock(MachineBasicBlock &MBB, uint32_t BlockID);
+
+  std::unique_ptr<SpecialCaseList> SCL;
 };
 } // namespace llvm
 
