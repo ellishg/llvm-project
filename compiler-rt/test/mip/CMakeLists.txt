@@ -1,17 +1,12 @@
 set(MIP_LIT_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
 set(MIP_TESTSUITES)
-set(MIP_TEST_DEPS
-  clang clang-resource-headers FileCheck count not compiler-rt-headers
-  llvm-config llvm-objcopy llvm-objdump llvm-nm llvm-mipdata)
-
-if(NOT APPLE AND COMPILER_RT_HAS_LLD AND "lld" IN_LIST LLVM_ENABLE_PROJECTS)
-  list(APPEND MIP_TEST_DEPS lld)
-endif()
-
-if(NOT COMPILER_RT_STANDALONE_BUILD AND COMPILER_RT_BUILD_MIP AND
-   COMPILER_RT_HAS_MIP)
-  list(APPEND MIP_TEST_DEPS mip)
+set(MIP_TEST_DEPS ${SANITIZER_COMMON_LIT_TEST_DEPS})
+if(NOT COMPILER_RT_STANDALONE_BUILD)
+  list(APPEND MIP_TEST_DEPS mip llvm-objcopy llvm-mipdata)
+  if(NOT APPLE AND COMPILER_RT_HAS_LLD AND "lld" IN_LIST LLVM_ENABLE_PROJECTS)
+    list(APPEND MIP_TEST_DEPS lld)
+  endif()
 endif()
 
 set(MIP_TEST_ARCH ${MIP_SUPPORTED_ARCH})
