@@ -13,6 +13,7 @@
 
 #include "llvm/ProfileData/InstrProfWriter.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/ProfileSummary.h"
 #include "llvm/ProfileData/InstrProf.h"
@@ -171,8 +172,11 @@ public:
 
 } // end namespace llvm
 
-InstrProfWriter::InstrProfWriter(bool Sparse)
-    : Sparse(Sparse), InfoObj(new InstrProfRecordWriterTrait()) {}
+InstrProfWriter::InstrProfWriter(bool Sparse, uint64_t TraceReservoirSize,
+                                 uint64_t MaxTraceLength)
+    : Sparse(Sparse), MaxTraceLength(MaxTraceLength),
+      TraceReservoirSize(TraceReservoirSize),
+      InfoObj(new InstrProfRecordWriterTrait()) {}
 
 InstrProfWriter::~InstrProfWriter() { delete InfoObj; }
 
@@ -285,6 +289,59 @@ void InstrProfWriter::addBinaryIds(ArrayRef<llvm::object::BuildID> BIs) {
   llvm::append_range(BinaryIds, BIs);
 }
 
+void InstrProfWriter::addFunctionTrace(InstrProfTraceTy Trace) {
+  if (Trace.size() > MaxTraceLength)
+    Trace.resize(MaxTraceLength);
+  if (Trace.empty())
+    return;
+
+  if (TraceStreamSize < TraceReservoirSize) {
+    // Simply append the trace if we have not yet hit our reservoir size limit.
+    Traces.push_back(std::move(Trace));
+  } else {
+    // Otherwise, replace a random trace in the stream.
+    std::uniform_int_distribution<uint64_t> Distribution(0, TraceStreamSize);
+    uint64_t RandomIndex = Distribution(RNG);
+    if (RandomIndex < Traces.size())
+      Traces[RandomIndex] = std::move(Trace);
+  }
+  ++TraceStreamSize;
+}
+
+void InstrProfWriter::addFunctionTraces(SmallVector<InstrProfTraceTy> SrcTraces,
+                                        uint64_t SrcTraceStreamSize) {
+  // Assume that the source has the same reservoir size as the destination to
+  // avoid needing to record it in the indexed profile format.
+  bool IsDestSampled = (TraceStreamSize > TraceReservoirSize);
+  bool IsSrcSampled = (SrcTraceStreamSize > TraceReservoirSize);
+  if (!IsDestSampled && IsSrcSampled) {
+    // If one of the traces are sampled, ensure that it belongs to Dest.
+    std::swap(Traces, SrcTraces);
+    std::swap(TraceStreamSize, SrcTraceStreamSize);
+    std::swap(IsDestSampled, IsSrcSampled);
+  }
+  if (!IsSrcSampled) {
+    // If the source stream is not sampled, we add each source trace normally.
+    for (auto &Trace : SrcTraces)
+      addFunctionTrace(std::move(Trace));
+    return;
+  }
+  // Otherwise, we find the traces that would have been removed if we added
+  // the whole source stream.
+  SmallSetVector<uint64_t, 8> IndicesToReplace;
+  for (uint64_t I = 0; I < SrcTraceStreamSize; I++) {
+    std::uniform_int_distribution<uint64_t> Distribution(0, TraceStreamSize);
+    uint64_t RandomIndex = Distribution(RNG);
+    if (RandomIndex < Traces.size())
+      IndicesToReplace.insert(RandomIndex);
+    ++TraceStreamSize;
+  }
+  // Then we insert a random sample of the source traces.
+  llvm::shuffle(SrcTraces.begin(), SrcTraces.end(), RNG);
+  for (auto [Index, Trace] : llvm::zip(IndicesToReplace, SrcTraces))
+    Traces[Index] = std::move(Trace);
+}
+
 void InstrProfWriter::mergeRecordsFromWriter(InstrProfWriter &&IPW,
                                              function_ref<void(Error)> Warn) {
   for (auto &I : IPW.FunctionData)
@@ -294,6 +351,8 @@ void InstrProfWriter::mergeRecordsFromWriter(InstrProfWriter &&IPW,
   BinaryIds.reserve(BinaryIds.size() + IPW.BinaryIds.size());
   for (auto &I : IPW.BinaryIds)
     addBinaryIds(I);
+
+  addFunctionTraces(std::move(IPW.Traces), IPW.TraceStreamSize);
 
   MemProfFrameData.reserve(IPW.MemProfFrameData.size());
   for (auto &I : IPW.MemProfFrameData) {
@@ -370,18 +429,21 @@ Error InstrProfWriter::writeImpl(ProfOStream &OS) {
     Header.Version |= VARIANT_MASK_FUNCTION_ENTRY_ONLY;
   if (static_cast<bool>(ProfileKind & InstrProfKind::MemProf))
     Header.Version |= VARIANT_MASK_MEMPROF;
+  if (static_cast<bool>(ProfileKind & InstrProfKind::TemporalProfile))
+    Header.Version |= VARIANT_MASK_TEMPORAL_PROF;
 
   Header.Unused = 0;
   Header.HashType = static_cast<uint64_t>(IndexedInstrProf::HashType);
   Header.HashOffset = 0;
   Header.MemProfOffset = 0;
   Header.BinaryIdOffset = 0;
+  Header.FunctionTracesOffset = 0;
   int N = sizeof(IndexedInstrProf::Header) / sizeof(uint64_t);
 
-  // Only write out all the fields except 'HashOffset', 'MemProfOffset' and
-  // 'BinaryIdOffset'. We need to remember the offset of these fields to allow
-  // back patching later.
-  for (int I = 0; I < N - 3; I++)
+  // Only write out all the fields except 'HashOffset', 'MemProfOffset',
+  // 'BinaryIdOffset' and `FunctionTracesOffset`. We need to remember the offset
+  // of these fields to allow back patching later.
+  for (int I = 0; I < N - 4; I++)
     OS.write(reinterpret_cast<uint64_t *>(&Header)[I]);
 
   // Save the location of Header.HashOffset field in \c OS.
@@ -400,6 +462,9 @@ Error InstrProfWriter::writeImpl(ProfOStream &OS) {
   uint64_t BinaryIdSectionOffset = OS.tell();
   // Reserve space for the BinaryIdOffset field to be patched later if this
   // profile contains binary ids.
+  OS.write(0);
+
+  uint64_t FunctionTracesOffset = OS.tell();
   OS.write(0);
 
   // Reserve space to write profile summary data.
@@ -515,6 +580,18 @@ Error InstrProfWriter::writeImpl(ProfOStream &OS) {
       OS.writeByte(0);
   }
 
+  uint64_t FunctionTracesSectionStart = 0;
+  if (static_cast<bool>(ProfileKind & InstrProfKind::TemporalProfile)) {
+    FunctionTracesSectionStart = OS.tell();
+    OS.write(Traces.size());
+    OS.write(TraceStreamSize);
+    for (auto &Trace : Traces) {
+      OS.write(Trace.size());
+      for (auto &NameRef : Trace)
+        OS.write(NameRef);
+    }
+  }
+
   // Allocate space for data to be serialized out.
   std::unique_ptr<IndexedInstrProf::Summary> TheSummary =
       IndexedInstrProf::allocSummary(SummarySize);
@@ -542,6 +619,8 @@ Error InstrProfWriter::writeImpl(ProfOStream &OS) {
       {MemProfSectionOffset, &MemProfSectionStart, 1},
       // Patch the Header.BinaryIdSectionOffset.
       {BinaryIdSectionOffset, &BinaryIdSectionStart, 1},
+      // Patch the Header.FunctionTracesOffset (=0 for profiles without traces).
+      {FunctionTracesOffset, &FunctionTracesSectionStart, 1},
       // Patch the summary data.
       {SummaryOffset, reinterpret_cast<uint64_t *>(TheSummary.get()),
        (int)(SummarySize / sizeof(uint64_t))},
@@ -664,6 +743,9 @@ Error InstrProfWriter::writeText(raw_fd_ostream &OS) {
     }
   }
 
+  if (static_cast<bool>(ProfileKind & InstrProfKind::TemporalProfile))
+    writeTextTraceData(OS, Symtab);
+
   llvm::sort(OrderedFuncData, [](const RecordType &A, const RecordType &B) {
     return std::tie(A.first, A.second.first) <
            std::tie(B.first, B.second.first);
@@ -682,4 +764,17 @@ Error InstrProfWriter::writeText(raw_fd_ostream &OS) {
   }
 
   return Error::success();
+}
+
+void InstrProfWriter::writeTextTraceData(raw_fd_ostream &OS,
+                                         InstrProfSymtab &Symtab) {
+  OS << ":traces\n";
+  OS << "# Num Traces:\n" << Traces.size() << "\n";
+  OS << "# Trace Stream Size:\n" << TraceStreamSize << "\n";
+  for (auto &Trace : Traces) {
+    for (auto &NameRef : Trace)
+      OS << Symtab.getFuncName(NameRef) << ",";
+    OS << "\n";
+  }
+  OS << "\n";
 }

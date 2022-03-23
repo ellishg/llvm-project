@@ -22,6 +22,9 @@
 #include <cstdarg>
 
 using namespace llvm;
+using ::testing::IsSubsetOf;
+using ::testing::SizeIs;
+using ::testing::UnorderedElementsAre;
 
 [[nodiscard]] static ::testing::AssertionResult
 ErrorEquals(instrprof_error Expected, Error E) {
@@ -222,6 +225,85 @@ TEST_F(InstrProfTest, test_writer_merge) {
   ASSERT_EQ(2U, R->Counts.size());
   ASSERT_EQ(0U, R->Counts[0]);
   ASSERT_EQ(0U, R->Counts[1]);
+}
+
+TEST_F(InstrProfTest, test_merge_traces_truncated) {
+  uint64_t TraceReservoirSize = 10;
+  uint64_t MaxTraceLength = 2;
+  InstrProfWriter Writer(false, TraceReservoirSize, MaxTraceLength);
+  ASSERT_THAT_ERROR(Writer.mergeProfileKind(InstrProfKind::TemporalProfile),
+                    Succeeded());
+
+  auto LargeTrace = {IndexedInstrProf::ComputeHash("foo"),
+                     IndexedInstrProf::ComputeHash("bar"),
+                     IndexedInstrProf::ComputeHash("goo")};
+  auto SmallTrace = {IndexedInstrProf::ComputeHash("foo"),
+                     IndexedInstrProf::ComputeHash("bar")};
+
+  Writer.addFunctionTraces({LargeTrace, SmallTrace}, 2);
+
+  auto Profile = Writer.writeBuffer();
+  readProfile(std::move(Profile));
+
+  ASSERT_TRUE(Reader->isTemporalProfile());
+  EXPECT_EQ(Reader->getTraceStreamSize(), 2);
+  EXPECT_THAT(Reader->getFunctionTraces(),
+              UnorderedElementsAre(SmallTrace, SmallTrace));
+}
+
+TEST_F(InstrProfTest, test_merge_traces_from_writer) {
+  uint64_t TraceReservoirSize = 10;
+  uint64_t MaxTraceLength = 10;
+  InstrProfWriter Writer(false, TraceReservoirSize, MaxTraceLength);
+  InstrProfWriter Writer2(false, TraceReservoirSize, MaxTraceLength);
+  ASSERT_THAT_ERROR(Writer.mergeProfileKind(InstrProfKind::TemporalProfile),
+                    Succeeded());
+  ASSERT_THAT_ERROR(Writer2.mergeProfileKind(InstrProfKind::TemporalProfile),
+                    Succeeded());
+
+  auto FooTrace = {IndexedInstrProf::ComputeHash("foo")};
+  auto BarTrace = {IndexedInstrProf::ComputeHash("bar")};
+
+  Writer.addFunctionTraces({FooTrace}, 1);
+  Writer2.addFunctionTraces({BarTrace}, 1);
+  Writer.mergeRecordsFromWriter(std::move(Writer2), Err);
+
+  auto Profile = Writer.writeBuffer();
+  readProfile(std::move(Profile));
+
+  ASSERT_TRUE(Reader->isTemporalProfile());
+  EXPECT_EQ(Reader->getTraceStreamSize(), 2);
+  EXPECT_THAT(Reader->getFunctionTraces(),
+              UnorderedElementsAre(FooTrace, BarTrace));
+}
+
+TEST_F(InstrProfTest, test_merge_traces_sampled) {
+  uint64_t TraceReservoirSize = 3;
+  uint64_t MaxTraceLength = 10;
+  InstrProfWriter Writer(false, TraceReservoirSize, MaxTraceLength);
+  ASSERT_THAT_ERROR(Writer.mergeProfileKind(InstrProfKind::TemporalProfile),
+                    Succeeded());
+
+  auto FooTrace = {IndexedInstrProf::ComputeHash("foo")};
+  auto BarTrace = {IndexedInstrProf::ComputeHash("bar")};
+  auto GooTrace = {IndexedInstrProf::ComputeHash("Goo")};
+
+  // Add some sampled traces
+  Writer.addFunctionTraces({FooTrace, BarTrace, GooTrace}, 5);
+  // Add some unsampled traces
+  Writer.addFunctionTraces({BarTrace, GooTrace}, 2);
+  Writer.addFunctionTraces({FooTrace}, 1);
+
+  auto Profile = Writer.writeBuffer();
+  readProfile(std::move(Profile));
+
+  ASSERT_TRUE(Reader->isTemporalProfile());
+  EXPECT_EQ(Reader->getTraceStreamSize(), 8);
+  // Check that we have a subset of all the traces we added
+  EXPECT_THAT(Reader->getFunctionTraces(), SizeIs(TraceReservoirSize));
+  EXPECT_THAT(
+      Reader->getFunctionTraces(),
+      IsSubsetOf({FooTrace, BarTrace, GooTrace, BarTrace, GooTrace, FooTrace}));
 }
 
 using ::llvm::memprof::IndexedMemProfRecord;
@@ -526,7 +608,7 @@ TEST_P(MaybeSparseInstrProfTest, annotate_vp_data) {
                                  N, T);
   ASSERT_FALSE(Res);
 
-  // Remove the MD_prof metadata 
+  // Remove the MD_prof metadata
   Inst->setMetadata(LLVMContext::MD_prof, 0);
   // Annotate 5 records this time.
   annotateValueSite(*M, *Inst, R.get(), IPVK_IndirectCallTarget, 0, 5);
@@ -546,7 +628,7 @@ TEST_P(MaybeSparseInstrProfTest, annotate_vp_data) {
   ASSERT_EQ(2000U, ValueData[4].Value);
   ASSERT_EQ(2U, ValueData[4].Count);
 
-  // Remove the MD_prof metadata 
+  // Remove the MD_prof metadata
   Inst->setMetadata(LLVMContext::MD_prof, 0);
   // Annotate with 4 records.
   InstrProfValueData VD0Sorted[] = {{1000, 6}, {2000, 5}, {3000, 4}, {4000, 3},

@@ -25,6 +25,7 @@
 #include "llvm/Support/Error.h"
 #include <cstdint>
 #include <memory>
+#include <random>
 
 namespace llvm {
 
@@ -41,6 +42,15 @@ public:
 private:
   bool Sparse;
   StringMap<ProfilingData> FunctionData;
+  /// The maximum length of a single trace.
+  uint64_t MaxTraceLength;
+  /// The maximum number of stored traces.
+  uint64_t TraceReservoirSize;
+  /// The total number of function traces seen.
+  uint64_t TraceStreamSize = 0;
+  /// The list of traces.
+  SmallVector<InstrProfTraceTy> Traces;
+  std::mt19937 RNG;
 
   // A map to hold memprof data per function. The lower 64 bits obtained from
   // the md5 hash of the function name is used to index into the map.
@@ -60,7 +70,8 @@ private:
   InstrProfRecordWriterTrait *InfoObj;
 
 public:
-  InstrProfWriter(bool Sparse = false);
+  InstrProfWriter(bool Sparse = false, uint64_t TraceReservoirSize = 0,
+                  uint64_t MaxTraceLength = 0);
   ~InstrProfWriter();
 
   StringMap<ProfilingData> &getProfileData() { return FunctionData; }
@@ -73,6 +84,11 @@ public:
   void addRecord(NamedInstrProfRecord &&I, function_ref<void(Error)> Warn) {
     addRecord(std::move(I), 1, Warn);
   }
+
+  /// Add \p SrcTraces using reservoir sampling where \p SrcTraceStreamSize is
+  /// the total number of traces the source has seen.
+  void addFunctionTraces(SmallVector<InstrProfTraceTy> SrcTraces,
+                         uint64_t SrcTraceStreamSize);
 
   /// Add a memprof record for a function identified by its \p Id.
   void addMemProfRecord(const GlobalValue::GUID Id,
@@ -95,6 +111,9 @@ public:
 
   /// Write the profile in text format to \c OS
   Error writeText(raw_fd_ostream &OS);
+
+  /// Write function trace data to the header in text format to \c OS
+  void writeTextTraceData(raw_fd_ostream &OS, InstrProfSymtab &Symtab);
 
   Error validateRecord(const InstrProfRecord &Func);
 
@@ -158,6 +177,8 @@ private:
   void addRecord(StringRef Name, uint64_t Hash, InstrProfRecord &&I,
                  uint64_t Weight, function_ref<void(Error)> Warn);
   bool shouldEncodeData(const ProfilingData &PD);
+  /// Add \p Trace using reservoir sampling.
+  void addFunctionTrace(InstrProfTraceTy Trace);
 
   Error writeImpl(ProfOStream &OS);
 };
