@@ -23,6 +23,7 @@
 #include "llvm/ProfileData/RawMemProfReader.h"
 #include "llvm/ProfileData/SampleProfReader.h"
 #include "llvm/ProfileData/SampleProfWriter.h"
+#include "llvm/Support/BalancedPartitioning.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Discriminator.h"
 #include "llvm/Support/Errc.h"
@@ -3031,6 +3032,40 @@ static int show_main(int argc, const char *argv[]) {
   return showMemProfProfile(Filename, ProfiledBinary, SFormat, OS);
 }
 
+static int order_main(int argc, const char *argv[]) {
+  cl::opt<std::string> Filename(cl::Positional, cl::desc("<profdata-file>"));
+  cl::opt<std::string> OutputFilename("output", cl::value_desc("output"),
+                                      cl::init("-"), cl::desc("Output file"));
+  cl::alias OutputFilenameA("o", cl::desc("Alias for --output"),
+                            cl::aliasopt(OutputFilename));
+  std::error_code EC;
+  cl::ParseCommandLineOptions(argc, argv, "TODO\n");
+  raw_fd_ostream OS(OutputFilename.data(), EC, sys::fs::OF_TextWithCRLF);
+  if (EC)
+    exitWithErrorCode(EC, OutputFilename);
+  auto FS = vfs::getRealFileSystem();
+  auto ReaderOrErr = InstrProfReader::create(Filename, *FS);
+  if (Error E = ReaderOrErr.takeError())
+    exitWithError(std::move(E), Filename);
+
+  auto Reader = std::move(ReaderOrErr.get());
+  for (auto &I : *Reader) {
+    // Read all entries.
+    (void)I;
+  }
+  auto &Traces = Reader->getFunctionTraces();
+
+  auto Documents = Document::fromTraces(Traces);
+  BalancedPartitioningConfig Config;
+  BalancedPartitioning BP(Config);
+  BP.run(Documents);
+
+  OS << "# Ordered " << Documents.size() << " functions\n";
+  for (auto &Doc : Documents)
+    OS << Reader->getSymtab().getFuncName(Doc.Id) << "\n";
+  return 0;
+}
+
 int llvm_profdata_main(int argc, char **argvNonConst,
                        const llvm::ToolContext &) {
   const char **argv = const_cast<const char **>(argvNonConst);
@@ -3046,6 +3081,8 @@ int llvm_profdata_main(int argc, char **argvNonConst,
       func = show_main;
     else if (strcmp(argv[1], "overlap") == 0)
       func = overlap_main;
+    else if (strcmp(argv[1], "order") == 0)
+      func = order_main;
 
     if (func) {
       std::string Invocation(ProgName.str() + " " + argv[1]);
@@ -3060,7 +3097,7 @@ int llvm_profdata_main(int argc, char **argvNonConst,
              << "USAGE: " << ProgName << " <command> [args...]\n"
              << "USAGE: " << ProgName << " <command> -help\n\n"
              << "See each individual command --help for more details.\n"
-             << "Available commands: merge, show, overlap\n";
+             << "Available commands: merge, show, overlap, order\n";
       return 0;
     }
   }
@@ -3070,6 +3107,6 @@ int llvm_profdata_main(int argc, char **argvNonConst,
   else
     errs() << ProgName << ": Unknown command!\n";
 
-  errs() << "USAGE: " << ProgName << " <merge|show|overlap> [args...]\n";
+  errs() << "USAGE: " << ProgName << " <merge|show|overlap|order> [args...]\n";
   return 1;
 }
