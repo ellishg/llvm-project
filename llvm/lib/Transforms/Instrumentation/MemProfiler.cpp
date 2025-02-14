@@ -570,13 +570,11 @@ void createMemprofDefaultOptionsVar(Module &M) {
       M.getContext(), MemprofRuntimeDefaultOptions, /*AddNull=*/true);
   GlobalVariable *OptionsVar =
       new GlobalVariable(M, OptionsConst->getType(), /*isConstant=*/true,
-                         GlobalValue::WeakAnyLinkage, OptionsConst,
+                         GlobalValue::ExternalLinkage, OptionsConst,
                          "__memprof_default_options_str");
   Triple TT(M.getTargetTriple());
-  if (TT.supportsCOMDAT()) {
-    OptionsVar->setLinkage(GlobalValue::ExternalLinkage);
+  if (TT.supportsCOMDAT())
     OptionsVar->setComdat(M.getOrInsertComdat(OptionsVar->getName()));
-  }
 }
 
 bool ModuleMemProfiler::instrumentModule(Module &M) {
