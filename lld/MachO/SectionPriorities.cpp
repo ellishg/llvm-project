@@ -383,6 +383,33 @@ macho::PriorityBuilder::buildInputSectionPriorities() {
     sectionPriorities = CallGraphSort(callGraphProfile).run();
   }
 
+  if (config->objCSelrefSectionOrder) {
+    // dyld accesses the whole __objc_methnames section in the order that they
+    // are referenced in the __objc_selrefs section. We can improve these
+    // accesses by using the __objc_methnames section to order the
+    // __objc_selrefs section.
+    // https://github.com/apple-oss-distributions/objc4/blob/f126469408dc82bd3f327217ae678fd0e6e3b37c/runtime/objc-runtime-new.mm#L4199-L4203
+    for (const auto *file : inputFiles) {
+      for (auto *sec : file->sections) {
+        for (auto &subsec : sec->subsections) {
+          auto *isec = subsec.isec;
+          if (!isec || !isSelRefsSection(isec))
+            continue;
+          if (isec->relocs.empty())
+            continue;
+          if (auto *sym = isec->relocs.front().referent.dyn_cast<Symbol *>()) {
+            if (auto *d = dyn_cast_or_null<Defined>(sym)) {
+              auto *cisec = cast<CStringInputSection>(d->isec());
+              auto &piece = cisec->getStringPiece(d->value);
+              sectionPriorities[isec] =
+                  std::numeric_limits<int>::min() + piece.outSecOff;
+            }
+          }
+        }
+      }
+    }
+  }
+
   if (priorities.empty())
     return sectionPriorities;
 

@@ -1095,6 +1095,11 @@ defm tail_merge_strings
     : BB<"tail-merge-strings", "Enable string tail merging",
          "Disable string tail merging to improve link-time performance">,
       Group<grp_rare>;
+def objc_selref_section_order
+    : Flag<["-"], "objc_selref_section_order">,
+      HelpText<"Order the __objc_selref section in the same way as the strings "
+               "it references in the __objc_methnames section.">,
+      Group<grp_rare>;
 
 def grp_deprecated : OptionGroup<"deprecated">, HelpText<"DEPRECATED">;
 

@@ -224,6 +224,7 @@ struct Configuration {
   bool disableVerify;
   bool separateCstringLiteralSections;
   bool tailMergeStrings;
+  bool objCSelrefSectionOrder;
 
   bool callGraphProfileSort = false;
   llvm::StringRef printSymbolOrder;
