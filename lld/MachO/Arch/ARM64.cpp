@@ -252,9 +252,11 @@ enum ExtendType { ZeroExtend = 1, Sign64 = 2, Sign32 = 3 };
 
 struct Ldr {
   uint8_t destRegister;
+  uint8_t dest2Register;
   uint8_t baseRegister;
   uint8_t p2Size;
   bool isFloat;
+  bool isLdp;
   ExtendType extendType;
   int64_t offset;
 };
@@ -264,6 +266,7 @@ struct Str {
   uint8_t src2Register;
   uint8_t baseRegister;
   uint8_t p2Size;
+  bool isFloat;
   bool isStp;
   int64_t offset;
 };
@@ -299,21 +302,44 @@ static bool parseLdr(uint32_t insn, Ldr &ldr) {
     ldr.p2Size = size;
     ldr.extendType = ZeroExtend;
     ldr.isFloat = false;
+    ldr.isLdp = false;
   } else if ((insn & 0x3f800000) == 0x39800000) {
     // LDRSB (immediate), LDRSH (immediate), LDRSW (immediate)
     ldr.p2Size = size;
     ldr.extendType = static_cast<ExtendType>(opc);
     ldr.isFloat = false;
+    ldr.isLdp = false;
   } else if ((insn & 0x3f400000) == 0x3d400000) {
     // LDR (immediate, SIMD&FP)
     ldr.extendType = ZeroExtend;
     ldr.isFloat = true;
+    ldr.isLdp = false;
     if (opc == 1)
       ldr.p2Size = size;
     else if (size == 0 && opc == 3)
       ldr.p2Size = 4;
     else
       return false;
+  } else if ((insn & 0x7fc00000) == 0x29400000) {
+    // LDP
+    ldr.dest2Register = (insn >> 10) & 0x1f;
+    ldr.p2Size = 2 + (insn >> 31);
+    // ldr.extendType =
+    ldr.isFloat = false;
+    ldr.isLdp = true;
+    ldr.offset = SignExtend32<7>(insn >> 15) << ldr.p2Size;
+  } else if ((insn & 0x3fc00000) == 0x2d400000) {
+    // LDNP (SIMD&FP)
+    ldr.dest2Register = (insn >> 10) & 0x1f;
+    // ldr.extendType = ZeroExtend;
+    ldr.isFloat = true;
+    ldr.isLdp = true;
+    ldr.p2Size = 2 + (insn >> 30);
+    ldr.offset = SignExtend32<7>(insn >> 15) << ldr.p2Size;
+  } else if ((insn & 0xffc00000) == 0x69400000) {
+    // LDPSW
+    // TODO: Not implemented
+    return false;
   } else {
     return false;
   }
@@ -325,10 +351,17 @@ static bool parseStr(uint32_t insn, Str &str) {
   str.srcRegister = insn & 0x1f;
   str.baseRegister = (insn >> 5) & 0x1f;
   if ((insn & 0x3fc00000) == 0x39000000) {
-    // STR (immediate)
+    // STR (immediate), STRB (immediate), STRH (immediate)
     str.p2Size = insn >> 30;
-    if ((str.p2Size & 0x2) == 0)
-      return false;
+    str.isFloat = false;
+    str.isStp = false;
+    str.offset = ((insn >> 10) & 0xfff) << str.p2Size;
+    return true;
+  }
+  if ((insn & 0x3f400000) == 0x3d000000) {
+    // STR (immediate, SIMD&FP)
+    str.p2Size = ((insn >> 21) & 0b100) | (insn >> 30);
+    str.isFloat = true;
     str.isStp = false;
     str.offset = ((insn >> 10) & 0xfff) << str.p2Size;
     return true;
@@ -337,8 +370,22 @@ static bool parseStr(uint32_t insn, Str &str) {
     // STP
     str.src2Register = (insn >> 10) & 0x1f;
     str.p2Size = 2 + (insn >> 31);
+    str.isFloat = false;
     str.isStp = true;
     str.offset = SignExtend32<7>(insn >> 15) << str.p2Size;
+    return true;
+  }
+  if ((insn & 0x3fc00000) == 0x2d000000) {
+    // STP (SIMD&FP)
+    // TODO: Not implemented
+    return false;
+  }
+  if ((insn & 0x3fc00000) == 0x2c000000) {
+    // STNP (SIMD&FP)
+    str.p2Size = ((insn >> 21) & 0b100) | (insn >> 30);
+    str.isFloat = true;
+    str.isStp = false;
+    str.offset = ((insn >> 10) & 0xfff) << str.p2Size;
     return true;
   }
   return false;
