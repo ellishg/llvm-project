@@ -258,6 +258,15 @@ struct Ldr {
   ExtendType extendType;
   int64_t offset;
 };
+
+struct Str {
+  uint8_t srcRegister;
+  uint8_t src2Register;
+  uint8_t baseRegister;
+  uint8_t p2Size;
+  bool isStp;
+  int64_t offset;
+};
 } // namespace
 
 static bool parseAdrp(uint32_t insn, Adrp &adrp) {
@@ -310,6 +319,29 @@ static bool parseLdr(uint32_t insn, Ldr &ldr) {
   }
   ldr.offset = ((insn >> 10) & 0xfff) << ldr.p2Size;
   return true;
+}
+
+static bool parseStr(uint32_t insn, Str &str) {
+  str.srcRegister = insn & 0x1f;
+  str.baseRegister = (insn >> 5) & 0x1f;
+  if ((insn & 0x3fc00000) == 0x39000000) {
+    // STR (immediate)
+    str.p2Size = insn >> 30;
+    if ((str.p2Size & 0x2) == 0)
+      return false;
+    str.isStp = false;
+    str.offset = ((insn >> 10) & 0xfff) << str.p2Size;
+    return true;
+  }
+  if ((insn & 0x7fc00000) == 0x29000000) {
+    // STP
+    str.src2Register = (insn >> 10) & 0x1f;
+    str.p2Size = 2 + (insn >> 31);
+    str.isStp = true;
+    str.offset = SignExtend32<7>(insn >> 15) << str.p2Size;
+    return true;
+  }
+  return false;
 }
 
 static bool isValidAdrOffset(int32_t delta) { return isInt<21>(delta); }
@@ -381,6 +413,32 @@ static void writeImmediateLdr(void *loc, const Ldr &ldr) {
   }
   uint32_t immBits = ldr.offset >> ldr.p2Size;
   write32le(loc, opcode | (immBits << 10) | (opc << 22) | (size << 30));
+}
+
+static bool isImmediateStrEligible(const Str &str) {
+  uint32_t size = 1 << str.p2Size;
+  if (str.offset % size)
+    return false;
+  if (str.isStp)
+    return isInt<7>(str.offset >> str.p2Size);
+  return str.offset >= 0 && isUInt<12>(str.offset >> str.p2Size);
+}
+
+static void writeImmediateStr(void *loc, const Str &str) {
+  assert(isImmediateStrEligible(str));
+  uint32_t immBits = str.offset >> str.p2Size;
+  uint32_t opcode = str.isStp ? 0x29000000 : 0x39000000;
+  opcode |= str.srcRegister;
+  opcode |= str.baseRegister << 5;
+  if (str.isStp) {
+    opcode |= str.src2Register << 10;
+    opcode |= (immBits & 0x7f) << 15;
+    opcode |= (str.p2Size - 2) << 31;
+  } else {
+    opcode |= immBits << 10;
+    opcode |= str.p2Size << 30;
+  }
+  write32le(loc, opcode);
 }
 
 // Transforms a pair of adrp+add instructions into an adr instruction if the
@@ -572,6 +630,57 @@ static void applyAdrpLdrGotLdr(uint8_t *buf, const ConcatInputSection *isec,
   }
 }
 
+// Optimizes an adrp+add+str sequence used for storing to a local symbol's
+// address converting to an adrp+str sequence.
+//
+//   adrp x0, _foo@PAGE
+//   add  x1, x0, _foo@PAGEOFF
+//   str  x2, [x1, #off]
+static void applyAdrpAddStr(uint8_t *buf, const ConcatInputSection *isec,
+                            uint64_t offset1, uint64_t offset2,
+                            uint64_t offset3) {
+  uint32_t ins1 = read32le(buf + offset1);
+  Adrp adrp;
+  if (!parseAdrp(ins1, adrp))
+    return;
+  uint32_t ins2 = read32le(buf + offset2);
+  Add add;
+  if (!parseAdd(ins2, add))
+    return;
+  uint32_t ins3 = read32le(buf + offset3);
+  Str str;
+  if (!parseStr(ins3, str))
+    return;
+  if (adrp.destRegister != add.srcRegister)
+    return;
+  if (add.destRegister != str.baseRegister)
+    return;
+
+  // Move the target's page offset into the str's immediate offset.
+  //   adrp x0, _foo@PAGE
+  //   nop
+  //   str x2, [x0, _foo@PAGEOFF + #off]
+  Str immediateStr = str;
+  immediateStr.baseRegister = adrp.destRegister;
+  immediateStr.offset += add.addend;
+  if (isImmediateStrEligible(immediateStr)) {
+    writeNop(buf + offset2);
+    writeImmediateStr(buf + offset3, immediateStr);
+  }
+}
+
+// Relaxes a GOT-indirect store.
+// If the referenced symbol is local and thus has been relaxed to adrp+add+str,
+// we perform the AdrpAddStr transformation.
+static void applyAdrpLdrGotStr(uint8_t *buf, const ConcatInputSection *isec,
+                               uint64_t offset1, uint64_t offset2,
+                               uint64_t offset3) {
+  uint32_t ins2 = read32le(buf + offset2);
+  Add add;
+  if (parseAdd(ins2, add))
+    applyAdrpAddStr(buf, isec, offset1, offset2, offset3);
+}
+
 template <typename Callback>
 static void forEachHint(ArrayRef<uint8_t> data, Callback callback) {
   std::array<uint64_t, 3> args;
@@ -697,8 +806,14 @@ void ARM64::applyOptimizationHints(uint8_t *outBuf, const ObjFile &obj) const {
                            args[1] - sectionAddr, args[2] - sectionAddr);
       break;
     case LOH_ARM64_ADRP_ADD_STR:
+      if (isValidOffset(args[1]) && isValidOffset(args[2]))
+        applyAdrpAddStr(buf, section, args[0] - sectionAddr,
+                        args[1] - sectionAddr, args[2] - sectionAddr);
+      break;
     case LOH_ARM64_ADRP_LDR_GOT_STR:
-      // TODO: Implement these
+      if (isValidOffset(args[1]) && isValidOffset(args[2]))
+        applyAdrpLdrGotStr(buf, section, args[0] - sectionAddr,
+                           args[1] - sectionAddr, args[2] - sectionAddr);
       break;
     }
   });

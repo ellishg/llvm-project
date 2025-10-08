@@ -582,6 +582,22 @@ define void @setF(i64 %t) {
   ret void
 }
 
+; CHECK-LABEL: _setFSTP
+; CHECK: [[ADRP_LABEL:Lloh[0-9]+]]:
+; CHECK-NEXT: adrp [[ADRP_REG:x[0-9]+]], _F@GOTPAGE
+; CHECK-NEXT: [[LDRGOT_LABEL:Lloh[0-9]+]]:
+; CHECK-NEXT: ldr {{[xw]}}[[LDRGOT_REG:[0-9]+]], [[[ADRP_REG]], _F@GOTPAGEOFF]
+; CHECK-NEXT: [[STR_LABEL:Lloh[0-9]+]]:
+; CHECK-NEXT: stp x0, x0, [x[[LDRGOT_REG]]]
+; CHECK-NEXT: ret
+; CHECK: .loh AdrpLdrGotStr [[ADRP_LABEL]], [[LDRGOT_LABEL]], [[STR_LABEL]]
+define void @setFSTP(i64 %t) {
+  %addr2 = getelementptr inbounds i32, ptr @F, i32 2
+  store i64 %t, ptr @F, align 4
+  store i64 %t, ptr %addr2, align 4
+  ret void
+}
+
 @G = common global float 0.0, align 4
 
 ; LDR float supports loading from a literal.
@@ -611,6 +627,22 @@ define float @getG() {
 ; CHECK: .loh AdrpLdrGotStr [[ADRP_LABEL]], [[LDRGOT_LABEL]], [[STR_LABEL]]
 define void @setG(float %t) {
   store float %t, ptr @G, align 4
+  ret void
+}
+
+; CHECK-LABEL: _setGSTP
+; CHECK: [[ADRP_LABEL:Lloh[0-9]+]]:
+; CHECK-NEXT: adrp [[ADRP_REG:x[0-9]+]], _G@GOTPAGE
+; CHECK-NEXT: [[LDRGOT_LABEL:Lloh[0-9]+]]:
+; CHECK-NEXT: ldr {{[xw]}}[[LDRGOT_REG:[0-9]+]], [[[ADRP_REG]], _G@GOTPAGEOFF]
+; CHECK-NEXT: [[STR_LABEL:Lloh[0-9]+]]:
+; CHECK-NEXT: stp s0, s0, [x[[LDRGOT_REG]]]
+; CHECK-NEXT: ret
+; CHECK: .loh AdrpLdrGotStr [[ADRP_LABEL]], [[LDRGOT_LABEL]], [[STR_LABEL]]
+define void @setGSTP(float %t) {
+  %addr2 = getelementptr inbounds i32, ptr @G, i32 1
+  store float %t, ptr @G, align 4
+  store float %t, ptr %addr2, align 4
   ret void
 }
 
@@ -675,6 +707,22 @@ define double @getI() {
 ; CHECK: .loh AdrpLdrGotStr [[ADRP_LABEL]], [[LDRGOT_LABEL]], [[STR_LABEL]]
 define void @setI(double %t) {
   store double %t, ptr @I, align 4
+  ret void
+}
+
+; CHECK-LABEL: _setISTP
+; CHECK: [[ADRP_LABEL:Lloh[0-9]+]]:
+; CHECK-NEXT: adrp [[ADRP_REG:x[0-9]+]], _I@GOTPAGE
+; CHECK-NEXT: [[LDRGOT_LABEL:Lloh[0-9]+]]:
+; CHECK-NEXT: ldr {{[xw]}}[[LDRGOT_REG:[0-9]+]], [[[ADRP_REG]], _I@GOTPAGEOFF]
+; CHECK-NEXT: [[STR_LABEL:Lloh[0-9]+]]:
+; CHECK-NEXT: stp d0, d0, [x[[LDRGOT_REG]]]
+; CHECK-NEXT: ret
+; CHECK: .loh AdrpLdrGotStr [[ADRP_LABEL]], [[LDRGOT_LABEL]], [[STR_LABEL]]
+define void @setISTP(double %t) {
+  %addr2 = getelementptr inbounds i32, ptr @I, i32 2
+  store double %t, ptr @I, align 4
+  store double %t, ptr %addr2, align 4
   ret void
 }
 
