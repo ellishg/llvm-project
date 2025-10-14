@@ -777,15 +777,16 @@ loadInput(const WeightedFile &Input, SymbolRemapper *Remapper,
   // then added to WriterContext::Errors. However, this is not extensible, if
   // we have more non-fatal errors from InstrProfReader in the future. How
   // should this interact with different -failure-mode?
-  std::optional<std::pair<Error, std::string>> ReaderWarning;
+  bool ReaderDidEmitWarning = false;
   auto Warn = [&](Error E) {
-    if (ReaderWarning) {
+    if (ReaderDidEmitWarning) {
       consumeError(std::move(E));
       return;
     }
     // Only show the first time an error occurs in this file.
     auto [ErrCode, Msg] = InstrProfError::take(std::move(E));
-    ReaderWarning = {make_error<InstrProfError>(ErrCode, Msg), Filename};
+    WC->Errors.emplace_back(make_error<InstrProfError>(ErrCode, Msg), Filename);
+    ReaderDidEmitWarning = true;
   };
 
   const ProfCorrelatorKind CorrelatorKind = BIDFetcherCorrelatorKind
@@ -796,11 +797,13 @@ loadInput(const WeightedFile &Input, SymbolRemapper *Remapper,
   if (Error E = ReaderOrErr.takeError()) {
     // Skip the empty profiles by returning silently.
     auto [ErrCode, Msg] = InstrProfError::take(std::move(E));
-    if (ErrCode != instrprof_error::empty_raw_profile)
+    if (!ReaderDidEmitWarning && ErrCode != instrprof_error::empty_raw_profile)
       WC->Errors.emplace_back(make_error<InstrProfError>(ErrCode, Msg),
                               Filename);
     return;
   }
+  if (ReaderDidEmitWarning)
+    return;
 
   auto Reader = std::move(ReaderOrErr.get());
   if (Error E = WC->Writer.mergeProfileKind(Reader->getProfileKind())) {
@@ -860,11 +863,6 @@ loadInput(const WeightedFile &Input, SymbolRemapper *Remapper,
     return;
   }
   WC->Writer.addBinaryIds(BinaryIds);
-
-  if (ReaderWarning) {
-    WC->Errors.emplace_back(std::move(ReaderWarning->first),
-                            ReaderWarning->second);
-  }
 }
 
 /// Merge the \p Src writer context into \p Dst.
