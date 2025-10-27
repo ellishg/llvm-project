@@ -111,6 +111,7 @@
 #include "llvm/Transforms/Scalar/LoopInterchange.h"
 #include "llvm/Transforms/Scalar/LoopLoadElimination.h"
 #include "llvm/Transforms/Scalar/LoopPassManager.h"
+#include "llvm/Transforms/Scalar/LoopRolling.h"
 #include "llvm/Transforms/Scalar/LoopRotation.h"
 #include "llvm/Transforms/Scalar/LoopSimplifyCFG.h"
 #include "llvm/Transforms/Scalar/LoopSink.h"
@@ -303,6 +304,9 @@ static cl::opt<std::string> InstrumentColdFuncOnlyPath(
     cl::desc("File path for cold function only instrumentation(requires use "
              "with --pgo-instrument-cold-function-only)"),
     cl::Hidden);
+
+static cl::opt<bool> EnableLoopRolling("enable-loop-rolling",
+                                       cl::desc("Enable loop rolling pass"));
 
 extern cl::opt<std::string> UseCtxProfile;
 extern cl::opt<bool> PGOInstrumentColdFunctionOnly;
@@ -1602,6 +1606,9 @@ PassBuilder::buildModuleOptimizationPipeline(OptimizationLevel Level,
                           .convertSwitchToArithmetic(true)
                           .speculateUnpredictables(true)
                           .hoistLoadsStoresWithCondFaulting(true)));
+
+  if (EnableLoopRolling)
+    OptimizePM.addPass(LoopRollingPass());
 
   // Add the core optimizing pipeline.
   MPM.addPass(createModuleToFunctionPassAdaptor(std::move(OptimizePM),

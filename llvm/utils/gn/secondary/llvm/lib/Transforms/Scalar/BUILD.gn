@@ -52,6 +52,7 @@ static_library("Scalar") {
     "LoopLoadElimination.cpp",
     "LoopPassManager.cpp",
     "LoopPredication.cpp",
+    "LoopRolling.cpp",
     "LoopRotation.cpp",
     "LoopSimplifyCFG.cpp",
     "LoopSink.cpp",
