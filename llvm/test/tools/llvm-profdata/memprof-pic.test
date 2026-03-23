@@ -1,103 +1,69 @@
-REQUIRES: x86_64-linux
+RUN: rm -rf %t && split-file %s %t
+RUN: llvm-profdata merge %t/pic.yaml -o %t.profdata
+RUN: llvm-profdata show --memory %t.profdata | FileCheck %s
 
-Since the profile contains virtual addresses for the callstack,
-we do not expect the raw binary profile to be deterministic. The
-summary should be deterministic apart from changes to the shared
-libraries linked in which could change the number of segments
-recorded.
-
-To update the inputs used below run Inputs/update_memprof_inputs.sh /path/to/updated/clang
-RUN: llvm-profdata show --memory %p/Inputs/pic.memprofraw --profiled-binary %p/Inputs/pic.memprofexe -o - 2>&1 | FileCheck %s
-
-CHECK:  MemprofProfile:
-CHECK-NEXT:   Summary:
-CHECK-NEXT:     Version: 5
-CHECK-NEXT:     NumSegments: {{[0-9]+}}
-CHECK-NEXT:     NumMibInfo: 2
-CHECK-NEXT:     NumAllocFunctions: 1
-CHECK-NEXT:     NumStackOffsets: 2
-CHECK-NEXT:   Segments:
-CHECK-NEXT:   -
-CHECK-NEXT:     BuildId: {{[[:xdigit:]]+}}
-CHECK-NEXT:     Start: 0x{{[[:xdigit:]]+}}
-CHECK-NEXT:     End: 0x{{[[:xdigit:]]+}}
-CHECK-NEXT:     Offset: 0x{{[[:xdigit:]]+}}
-CHECK-NEXT:   -
-
-CHECK:   Records:
-CHECK-NEXT:   -
-CHECK-NEXT:     FunctionGUID: {{[0-9]+}}
+CHECK: HeapProfileRecords:
+CHECK-NEXT:   - GUID:            0xdb956436e78dd5fa
 CHECK-NEXT:     AllocSites:
-CHECK-NEXT:     -
-CHECK-NEXT:       Callstack:
-CHECK-NEXT:       -
-CHECK-NEXT:         Function: {{[0-9]+}}
-CHECK-NEXT:         SymbolName: main
-CHECK-NEXT:         LineOffset: 1
-CHECK-NEXT:         Column: 21
-CHECK-NEXT:         Inline: 0
-CHECK-NEXT:       MemInfoBlock:
-CHECK-NEXT:         AllocCount: 1
-CHECK-NEXT:         TotalAccessCount: 2
-CHECK-NEXT:         MinAccessCount: 2
-CHECK-NEXT:         MaxAccessCount: 2
-CHECK-NEXT:         TotalSize: 10
-CHECK-NEXT:         MinSize: 10
-CHECK-NEXT:         MaxSize: 10
-CHECK-NEXT:         AllocTimestamp: {{[0-9]+}}
-CHECK-NEXT:         DeallocTimestamp: {{[0-9]+}}
-CHECK-NEXT:         TotalLifetime: 0
-CHECK-NEXT:         MinLifetime: 0
-CHECK-NEXT:         MaxLifetime: 0
-CHECK-NEXT:         AllocCpuId: {{[0-9]+}}
-CHECK-NEXT:         DeallocCpuId: {{[0-9]+}}
-CHECK-NEXT:         NumMigratedCpu: 0
-CHECK-NEXT:         NumLifetimeOverlaps: 0
-CHECK-NEXT:         NumSameAllocCpu: 0
-CHECK-NEXT:         NumSameDeallocCpu: 0
-CHECK-NEXT:         DataTypeId: {{[0-9]+}}
-CHECK-NEXT:         TotalAccessDensity: 20
-CHECK-NEXT:         MinAccessDensity: 20
-CHECK-NEXT:         MaxAccessDensity: 20
-CHECK-NEXT:         TotalLifetimeAccessDensity: 20000
-CHECK-NEXT:         MinLifetimeAccessDensity: 20000
-CHECK-NEXT:         MaxLifetimeAccessDensity: 20000
-CHECK-NEXT:         AccessHistogramSize: 0
-CHECK-NEXT:         AccessHistogram: 0
+CHECK-NEXT:       - Callstack:
+CHECK-NEXT:           - { Function: 0xdb956436e78dd5fa, LineOffset: 1, Column: 21, IsInlineFrame: false }
+CHECK-NEXT:         MemInfoBlock:
+CHECK-NEXT:           AllocCount:      1
+CHECK-NEXT:           TotalSize:       10
+CHECK-NEXT:           TotalLifetime:   0
+CHECK-NEXT:           TotalLifetimeAccessDensity: 20000
+CHECK-NEXT:       - Callstack:
+CHECK-NEXT:           - { Function: 0xdb956436e78dd5fa, LineOffset: 4, Column: 15, IsInlineFrame: false }
+CHECK-NEXT:         MemInfoBlock:
+CHECK-NEXT:           AllocCount:      1
+CHECK-NEXT:           TotalSize:       10
+CHECK-NEXT:           TotalLifetime:   0
+CHECK-NEXT:           TotalLifetimeAccessDensity: 20000
+CHECK-NEXT: ...
 
-CHECK-NEXT:     -
-CHECK-NEXT:       Callstack:
-CHECK-NEXT:       -
-CHECK-NEXT:         Function: {{[0-9]+}}
-CHECK-NEXT:         SymbolName: main
-CHECK-NEXT:         LineOffset: 4
-CHECK-NEXT:         Column: 15
-CHECK-NEXT:         Inline: 0
-CHECK-NEXT:       MemInfoBlock:
-CHECK-NEXT:         AllocCount: 1
-CHECK-NEXT:         TotalAccessCount: 2
-CHECK-NEXT:         MinAccessCount: 2
-CHECK-NEXT:         MaxAccessCount: 2
-CHECK-NEXT:         TotalSize: 10
-CHECK-NEXT:         MinSize: 10
-CHECK-NEXT:         MaxSize: 10
-CHECK-NEXT:         AllocTimestamp: {{[0-9]+}}
-CHECK-NEXT:         DeallocTimestamp: {{[0-9]+}}
-CHECK-NEXT:         TotalLifetime: 0
-CHECK-NEXT:         MinLifetime: 0
-CHECK-NEXT:         MaxLifetime: 0
-CHECK-NEXT:         AllocCpuId: {{[0-9]+}}
-CHECK-NEXT:         DeallocCpuId: {{[0-9]+}}
-CHECK-NEXT:         NumMigratedCpu: 0
-CHECK-NEXT:         NumLifetimeOverlaps: 0
-CHECK-NEXT:         NumSameAllocCpu: 0
-CHECK-NEXT:         NumSameDeallocCpu: 0
-CHECK-NEXT:         DataTypeId: {{[0-9]+}}
-CHECK-NEXT:         TotalAccessDensity: 20
-CHECK-NEXT:         MinAccessDensity: 20
-CHECK-NEXT:         MaxAccessDensity: 20
-CHECK-NEXT:         TotalLifetimeAccessDensity: 20000
-CHECK-NEXT:         MinLifetimeAccessDensity: 20000
-CHECK-NEXT:         MaxLifetimeAccessDensity: 20000
-CHECK-NEXT:         AccessHistogramSize: 0
-CHECK-NEXT:         AccessHistogram: 0
+;--- pic.c
+#include <stdlib.h>
+#include <string.h>
+int main(int argc, char **argv) {
+  char *x = (char *)malloc(10);
+  memset(x, 0, 10);
+  free(x);
+  x = (char *)malloc(10);
+  memset(x, 0, 10);
+  free(x);
+  return 0;
+}
+;--- gen
+DEFAULT_MEMPROF_FLAGS="-fuse-ld=lld -Wl,--no-rosegment -gmlt -fdebug-info-for-profiling -fmemory-profile -mno-omit-leaf-frame-pointer -fno-omit-frame-pointer -fno-optimize-sibling-calls -m64 -Wl,-build-id -no-pie"
+clang $DEFAULT_MEMPROF_FLAGS -pie pic.c -o pic.memprofexe
+env MEMPROF_OPTIONS=log_path=stdout ./pic.memprofexe > pic.memprofraw
+llvm-profdata merge pic.memprofraw --profiled-binary pic.memprofexe -o pic.profdata
+llvm-profdata show --memory pic.profdata
+;--- pic.yaml
+---
+# MemProfSummary:
+#   Total contexts: 2
+#   Total cold contexts: 0
+#   Total hot contexts: 0
+#   Maximum cold context total size: 0
+#   Maximum warm context total size: 10
+#   Maximum hot context total size: 0
+---
+HeapProfileRecords:
+  - GUID:            0xdb956436e78dd5fa
+    AllocSites:
+      - Callstack:
+          - { Function: 0xdb956436e78dd5fa, LineOffset: 1, Column: 21, IsInlineFrame: false }
+        MemInfoBlock:
+          AllocCount:      1
+          TotalSize:       10
+          TotalLifetime:   0
+          TotalLifetimeAccessDensity: 20000
+      - Callstack:
+          - { Function: 0xdb956436e78dd5fa, LineOffset: 4, Column: 15, IsInlineFrame: false }
+        MemInfoBlock:
+          AllocCount:      1
+          TotalSize:       10
+          TotalLifetime:   0
+          TotalLifetimeAccessDensity: 20000
+...

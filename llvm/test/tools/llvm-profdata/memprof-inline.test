@@ -1,173 +1,118 @@
-REQUIRES: x86_64-linux
+RUN: rm -rf %t && split-file %s %t
+RUN: llvm-profdata merge %t/inline.yaml -o %t.profdata
+RUN: llvm-profdata show --memory %t.profdata | FileCheck %s
 
-To update the inputs used below run Inputs/update_memprof_inputs.sh /path/to/updated/clang
-RUN: llvm-profdata show --memory %p/Inputs/inline.memprofraw --profiled-binary %p/Inputs/inline.memprofexe | FileCheck %s
+CHECK: HeapProfileRecords:
+CHECK-NEXT:   - GUID:            0xdb956436e78dd5fa
+CHECK-NEXT:     CallSites:
+CHECK-NEXT:       - Frames:
+CHECK-NEXT:           - { Function: 0xdb956436e78dd5fa, LineOffset: 1, Column: 3, IsInlineFrame: false }
+CHECK-NEXT:   - GUID:            0x110c56e259526faa
+CHECK-NEXT:     AllocSites:
+CHECK-NEXT:       - Callstack:
+CHECK-NEXT:           - { Function: 0x35c1d64fabd64b9c, LineOffset: 1, Column: 23, IsInlineFrame: true }
+CHECK-NEXT:           - { Function: 0x110c56e259526faa, LineOffset: 0, Column: 18, IsInlineFrame: false }
+CHECK-NEXT:           - { Function: 0x33bc29154aca5065, LineOffset: 0, Column: 19, IsInlineFrame: false }
+CHECK-NEXT:           - { Function: 0xdb956436e78dd5fa, LineOffset: 1, Column: 3, IsInlineFrame: false }
+CHECK-NEXT:         MemInfoBlock:
+CHECK-NEXT:           AllocCount:      1
+CHECK-NEXT:           TotalSize:       1
+CHECK-NEXT:           TotalLifetime:   0
+CHECK-NEXT:           TotalLifetimeAccessDensity: 100000
+CHECK-NEXT:     CallSites:
+CHECK-NEXT:       - Frames:
+CHECK-NEXT:           - { Function: 0x35c1d64fabd64b9c, LineOffset: 1, Column: 23, IsInlineFrame: true }
+CHECK-NEXT:           - { Function: 0x110c56e259526faa, LineOffset: 0, Column: 18, IsInlineFrame: false }
+CHECK-NEXT:   - GUID:            0x35c1d64fabd64b9c
+CHECK-NEXT:     AllocSites:
+CHECK-NEXT:       - Callstack:
+CHECK-NEXT:           - { Function: 0x35c1d64fabd64b9c, LineOffset: 1, Column: 23, IsInlineFrame: true }
+CHECK-NEXT:           - { Function: 0x110c56e259526faa, LineOffset: 0, Column: 18, IsInlineFrame: false }
+CHECK-NEXT:           - { Function: 0x33bc29154aca5065, LineOffset: 0, Column: 19, IsInlineFrame: false }
+CHECK-NEXT:           - { Function: 0xdb956436e78dd5fa, LineOffset: 1, Column: 3, IsInlineFrame: false }
+CHECK-NEXT:         MemInfoBlock:
+CHECK-NEXT:           AllocCount:      1
+CHECK-NEXT:           TotalSize:       1
+CHECK-NEXT:           TotalLifetime:   0
+CHECK-NEXT:           TotalLifetimeAccessDensity: 100000
+CHECK-NEXT:   - GUID:            0x33bc29154aca5065
+CHECK-NEXT:     CallSites:
+CHECK-NEXT:       - Frames:
+CHECK-NEXT:           - { Function: 0x33bc29154aca5065, LineOffset: 0, Column: 19, IsInlineFrame: false }
+CHECK-NEXT: ...
 
-CHECK:  MemprofProfile:
-CHECK-NEXT:  Summary:
-CHECK-NEXT:    Version: 5
-CHECK-NEXT:    NumSegments: {{[0-9]+}}
-CHECK-NEXT:    NumMibInfo: 2
-CHECK-NEXT:    NumAllocFunctions: 2
-CHECK-NEXT:    NumStackOffsets: 1
-CHECK-NEXT:  Segments:
-CHECK-NEXT:  -
-CHECK-NEXT:    BuildId: {{[[:xdigit:]]+}}
-CHECK-NEXT:    Start: 0x{{[[:xdigit:]]+}}
-CHECK-NEXT:    End: 0x{{[[:xdigit:]]+}}
-CHECK-NEXT:    Offset: 0x{{[[:xdigit:]]+}}
-CHECK-NEXT:  -
+;--- inline.cpp
+#include <stdlib.h>
+#include <string.h>
 
-CHECK:  Records:
-CHECK-NEXT:  -
-CHECK-NEXT:    FunctionGUID: 3873612792189045660
-CHECK-NEXT:    AllocSites:
-CHECK-NEXT:    -
-CHECK-NEXT:      Callstack:
-CHECK-NEXT:      -
-CHECK-NEXT:        Function: 3873612792189045660
-CHECK-NEXT:        SymbolName: _Z3quxi
-CHECK-NEXT:        LineOffset: 1
-CHECK-NEXT:        Column: 23
-CHECK-NEXT:        Inline: 1
-CHECK-NEXT:      -
-CHECK-NEXT:        Function: 1228452328526475178
-CHECK-NEXT:        SymbolName: _Z3fooi
-CHECK-NEXT:        LineOffset: 0
-CHECK-NEXT:        Column: 18
-CHECK-NEXT:        Inline: 0
-CHECK-NEXT:      -
-CHECK-NEXT:        Function: 3727899762981752933
-CHECK-NEXT:        SymbolName: _Z3bari
-CHECK-NEXT:        LineOffset: 0
-CHECK-NEXT:        Column: 19
-CHECK-NEXT:        Inline: 0
-CHECK-NEXT:      -
-CHECK-NEXT:        Function: 15822663052811949562
-CHECK-NEXT:        SymbolName: main
-CHECK-NEXT:        LineOffset: 1
-CHECK-NEXT:        Column: 3
-CHECK-NEXT:        Inline: 0
-CHECK-NEXT:      MemInfoBlock:
-CHECK-NEXT:        AllocCount: 1
-CHECK-NEXT:        TotalAccessCount: 1
-CHECK-NEXT:        MinAccessCount: 1
-CHECK-NEXT:        MaxAccessCount: 1
-CHECK-NEXT:        TotalSize: 1
-CHECK-NEXT:        MinSize: 1
-CHECK-NEXT:        MaxSize: 1
-CHECK-NEXT:        AllocTimestamp: {{[0-9]+}}
-CHECK-NEXT:        DeallocTimestamp: {{[0-9]+}}
-CHECK-NEXT:        TotalLifetime: 0
-CHECK-NEXT:        MinLifetime: 0
-CHECK-NEXT:        MaxLifetime: 0
-CHECK-NEXT:        AllocCpuId: {{[0-9]+}}
-CHECK-NEXT:        DeallocCpuId: {{[0-9]+}}
-CHECK-NEXT:        NumMigratedCpu: 0
-CHECK-NEXT:        NumLifetimeOverlaps: 0
-CHECK-NEXT:        NumSameAllocCpu: 0
-CHECK-NEXT:        NumSameDeallocCpu: 0
-CHECK-NEXT:        DataTypeId: {{[0-9]+}}
-CHECK-NEXT:        TotalAccessDensity: 100
-CHECK-NEXT:        MinAccessDensity: 100
-CHECK-NEXT:        MaxAccessDensity: 100
-CHECK-NEXT:        TotalLifetimeAccessDensity: 100000
-CHECK-NEXT:        MinLifetimeAccessDensity: 100000
-CHECK-NEXT:        MaxLifetimeAccessDensity: 100000
-CHECK-NEXT:        AccessHistogramSize: 0
-CHECK-NEXT:        AccessHistogram: 0
+__attribute__((always_inline))
+void qux(int x) {
+  char *ptr = (char*) malloc(x);
+  memset(ptr, 0, x);
+  free(ptr);
+}
 
+__attribute__((noinline))
+void foo(int x){ qux(x); }
 
-CHECK-NEXT:  -
-CHECK-NEXT:    FunctionGUID: 1228452328526475178
-CHECK-NEXT:    AllocSites:
-CHECK-NEXT:    -
-CHECK-NEXT:      Callstack:
-CHECK-NEXT:      -
-CHECK-NEXT:        Function: 3873612792189045660
-CHECK-NEXT:        SymbolName: _Z3quxi
-CHECK-NEXT:        LineOffset: 1
-CHECK-NEXT:        Column: 23
-CHECK-NEXT:        Inline: 1
-CHECK-NEXT:      -
-CHECK-NEXT:        Function: 1228452328526475178
-CHECK-NEXT:        SymbolName: _Z3fooi
-CHECK-NEXT:        LineOffset: 0
-CHECK-NEXT:        Column: 18
-CHECK-NEXT:        Inline: 0
-CHECK-NEXT:      -
-CHECK-NEXT:        Function: 3727899762981752933
-CHECK-NEXT:        SymbolName: _Z3bari
-CHECK-NEXT:        LineOffset: 0
-CHECK-NEXT:        Column: 19
-CHECK-NEXT:        Inline: 0
-CHECK-NEXT:      -
-CHECK-NEXT:        Function: 15822663052811949562
-CHECK-NEXT:        SymbolName: main
-CHECK-NEXT:        LineOffset: 1
-CHECK-NEXT:        Column: 3
-CHECK-NEXT:        Inline: 0
-CHECK-NEXT:      MemInfoBlock:
-CHECK-NEXT:        AllocCount: 1
-CHECK-NEXT:        TotalAccessCount: 1
-CHECK-NEXT:        MinAccessCount: 1
-CHECK-NEXT:        MaxAccessCount: 1
-CHECK-NEXT:        TotalSize: 1
-CHECK-NEXT:        MinSize: 1
-CHECK-NEXT:        MaxSize: 1
-CHECK-NEXT:        AllocTimestamp: {{[0-9]+}}
-CHECK-NEXT:        DeallocTimestamp: {{[0-9]+}}
-CHECK-NEXT:        TotalLifetime: 0
-CHECK-NEXT:        MinLifetime: 0
-CHECK-NEXT:        MaxLifetime: 0
-CHECK-NEXT:        AllocCpuId: {{[0-9]+}}
-CHECK-NEXT:        DeallocCpuId: {{[0-9]+}}
-CHECK-NEXT:        NumMigratedCpu: 0
-CHECK-NEXT:        NumLifetimeOverlaps: 0
-CHECK-NEXT:        NumSameAllocCpu: 0
-CHECK-NEXT:        NumSameDeallocCpu: 0
-CHECK-NEXT:        DataTypeId: {{[0-9]+}}
-CHECK-NEXT:        TotalAccessDensity: 100
-CHECK-NEXT:        MinAccessDensity: 100
-CHECK-NEXT:        MaxAccessDensity: 100
-CHECK-NEXT:        TotalLifetimeAccessDensity: 100000
-CHECK-NEXT:        MinLifetimeAccessDensity: 100000
-CHECK-NEXT:        MaxLifetimeAccessDensity: 100000
-CHECK-NEXT:        AccessHistogramSize: 0
-CHECK-NEXT:        AccessHistogram: 0
+__attribute__((noinline))
+void bar(int x) { foo(x); }
 
-CHECK-NEXT:    CallSites:
-CHECK-NEXT:    -
-CHECK-NEXT:      -
-CHECK-NEXT:        Function: 3873612792189045660
-CHECK-NEXT:        SymbolName: _Z3quxi
-CHECK-NEXT:        LineOffset: 1
-CHECK-NEXT:        Column: 23
-CHECK-NEXT:        Inline: 1
-CHECK-NEXT:    -
-CHECK-NEXT:      -
-CHECK-NEXT:        Function: 1228452328526475178
-CHECK-NEXT:        SymbolName: _Z3fooi
-CHECK-NEXT:        LineOffset: 0
-CHECK-NEXT:        Column: 18
-CHECK-NEXT:        Inline: 0
-CHECK-NEXT:  -
-CHECK-NEXT:    FunctionGUID: 3727899762981752933
-CHECK-NEXT:    CallSites:
-CHECK-NEXT:    -
-CHECK-NEXT:      -
-CHECK-NEXT:        Function: 3727899762981752933
-CHECK-NEXT:        SymbolName: _Z3bari
-CHECK-NEXT:        LineOffset: 0
-CHECK-NEXT:        Column: 19
-CHECK-NEXT:        Inline: 0
-CHECK-NEXT:  -
-CHECK-NEXT:    FunctionGUID: 15822663052811949562
-CHECK-NEXT:    CallSites:
-CHECK-NEXT:    -
-CHECK-NEXT:      -
-CHECK-NEXT:        Function: 15822663052811949562
-CHECK-NEXT:        SymbolName: main
-CHECK-NEXT:        LineOffset: 1
-CHECK-NEXT:        Column: 3
-CHECK-NEXT:        Inline: 0
+int main(int argc, char **argv) {
+  bar(argc);
+  return 0;
+}
+;--- gen
+DEFAULT_MEMPROF_FLAGS="-fuse-ld=lld -Wl,--no-rosegment -gmlt -fdebug-info-for-profiling -fmemory-profile -mno-omit-leaf-frame-pointer -fno-omit-frame-pointer -fno-optimize-sibling-calls -m64 -Wl,-build-id -no-pie"
+clang++ $DEFAULT_MEMPROF_FLAGS inline.cpp -o inline.memprofexe
+env MEMPROF_OPTIONS=log_path=stdout ./inline.memprofexe > inline.memprofraw
+llvm-profdata merge inline.memprofraw --profiled-binary inline.memprofexe -o inline.profdata
+llvm-profdata show --memory inline.profdata
+;--- inline.yaml
+---
+# MemProfSummary:
+#   Total contexts: 1
+#   Total cold contexts: 0
+#   Total hot contexts: 0
+#   Maximum cold context total size: 0
+#   Maximum warm context total size: 1
+#   Maximum hot context total size: 0
+---
+HeapProfileRecords:
+  - GUID:            0xdb956436e78dd5fa
+    CallSites:
+      - Frames:
+          - { Function: 0xdb956436e78dd5fa, LineOffset: 1, Column: 3, IsInlineFrame: false }
+  - GUID:            0x110c56e259526faa
+    AllocSites:
+      - Callstack:
+          - { Function: 0x35c1d64fabd64b9c, LineOffset: 1, Column: 23, IsInlineFrame: true }
+          - { Function: 0x110c56e259526faa, LineOffset: 0, Column: 18, IsInlineFrame: false }
+          - { Function: 0x33bc29154aca5065, LineOffset: 0, Column: 19, IsInlineFrame: false }
+          - { Function: 0xdb956436e78dd5fa, LineOffset: 1, Column: 3, IsInlineFrame: false }
+        MemInfoBlock:
+          AllocCount:      1
+          TotalSize:       1
+          TotalLifetime:   0
+          TotalLifetimeAccessDensity: 100000
+    CallSites:
+      - Frames:
+          - { Function: 0x35c1d64fabd64b9c, LineOffset: 1, Column: 23, IsInlineFrame: true }
+          - { Function: 0x110c56e259526faa, LineOffset: 0, Column: 18, IsInlineFrame: false }
+  - GUID:            0x35c1d64fabd64b9c
+    AllocSites:
+      - Callstack:
+          - { Function: 0x35c1d64fabd64b9c, LineOffset: 1, Column: 23, IsInlineFrame: true }
+          - { Function: 0x110c56e259526faa, LineOffset: 0, Column: 18, IsInlineFrame: false }
+          - { Function: 0x33bc29154aca5065, LineOffset: 0, Column: 19, IsInlineFrame: false }
+          - { Function: 0xdb956436e78dd5fa, LineOffset: 1, Column: 3, IsInlineFrame: false }
+        MemInfoBlock:
+          AllocCount:      1
+          TotalSize:       1
+          TotalLifetime:   0
+          TotalLifetimeAccessDensity: 100000
+  - GUID:            0x33bc29154aca5065
+    CallSites:
+      - Frames:
+          - { Function: 0x33bc29154aca5065, LineOffset: 0, Column: 19, IsInlineFrame: false }
+...

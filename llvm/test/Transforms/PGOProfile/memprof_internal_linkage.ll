@@ -1,19 +1,14 @@
 ;; Tests memprof when contains internal linkage function.
 
-;; Avoid failures on big-endian systems that can't read the profile properly
-; REQUIRES: x86_64-linux
+; RUN: rm -rf %t && split-file %s %t
 
-;; TODO: Use text profile inputs once that is available for memprof.
-;; # To update the Inputs below, run Inputs/update_memprof_inputs.sh.
-;; # To generate below LLVM IR for use in matching.
-;; $ clang++ -gmlt -fdebug-info-for-profiling -S %S/Inputs/memprof_internal_linkage.cc -emit-llvm -funique-internal-linkage-names
-
-; RUN: llvm-profdata merge %S/Inputs/memprof_internal_linkage.memprofraw --profiled-binary %S/Inputs/memprof_internal_linkage.exe -o %t.memprofdata
-; RUN: opt < %s -passes='memprof-use<profile-filename=%t.memprofdata>' -S | FileCheck %s
+; RUN: llvm-profdata merge %t/memprof_internal_linkage.yaml -o %t.memprofdata
+; RUN: opt < %t/memprof_internal_linkage.ll -passes='memprof-use<profile-filename=%t.memprofdata>' -S | FileCheck %s
 
 ; CHECK: call {{.*}} @_Znam{{.*}} #[[ATTR:[0-9]+]]
 ; CHECK: attributes #[[ATTR]] = { builtin allocsize(0) "memprof"="notcold" }
 
+;--- memprof_internal_linkage.ll
 ; ModuleID = 'memprof_internal_linkage.cc'
 source_filename = "memprof_internal_linkage.cc"
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
@@ -82,3 +77,36 @@ attributes #5 = { builtin allocsize(0) }
 !19 = !DILocation(line: 5, column: 10, scope: !16)
 !20 = !DILocation(line: 5, column: 3, scope: !16)
 !21 = !DILocation(line: 6, column: 1, scope: !16)
+
+;--- gen
+COMMON_FLAGS="-fuse-ld=lld -Wl,--no-rosegment -gmlt -fdebug-info-for-profiling -mno-omit-leaf-frame-pointer -fno-omit-frame-pointer -fno-optimize-sibling-calls -m64 -Wl,-build-id -no-pie"
+clang++ $COMMON_FLAGS -fmemory-profile -x ir memprof_internal_linkage.ll -o memprof_internal_linkage.exe
+env MEMPROF_OPTIONS=log_path=stdout ./memprof_internal_linkage.exe > memprof_internal_linkage.memprofraw
+llvm-profdata merge memprof_internal_linkage.memprofraw --profiled-binary memprof_internal_linkage.exe -o memprof_internal_linkage.profdata
+llvm-profdata show --memory memprof_internal_linkage.profdata
+;--- memprof_internal_linkage.yaml
+---
+# MemProfSummary:
+#   Total contexts: 1
+#   Total cold contexts: 0
+#   Total hot contexts: 0
+#   Maximum cold context total size: 0
+#   Maximum warm context total size: 20
+#   Maximum hot context total size: 0
+---
+HeapProfileRecords:
+  - GUID:            0xdb956436e78dd5fa
+    CallSites:
+      - Frames:
+          - { Function: 0xdb956436e78dd5fa, LineOffset: 1, Column: 3, IsInlineFrame: false }
+  - GUID:            0x5e335f1939cb45a8
+    AllocSites:
+      - Callstack:
+          - { Function: 0x5e335f1939cb45a8, LineOffset: 1, Column: 12, IsInlineFrame: false }
+          - { Function: 0xdb956436e78dd5fa, LineOffset: 1, Column: 3, IsInlineFrame: false }
+        MemInfoBlock:
+          AllocCount:      1
+          TotalSize:       20
+          TotalLifetime:   0
+          TotalLifetimeAccessDensity: 5000
+...
