@@ -84,7 +84,7 @@
 # CHECK:  bl 0x[[#%x, A]] <_a>
 # CHECK:  bl 0x[[#%x, B]] <_b>
 # CHECK:  bl 0x[[#%x, C]] <_c>
-# CHECK:  bl 0x[[#%x, D_THUNK_0]] <_d.thunk.0>
+# CHECK:  bl 0x[[#%x, D:]] <_d>
 # CHECK:  bl 0x[[#%x, E_THUNK_0]] <_e.thunk.0>
 # CHECK:  bl 0x[[#%x, F_THUNK_0]] <_f.thunk.0>
 # CHECK:  bl 0x[[#%x, G_THUNK_0]] <_g.thunk.0>
@@ -95,9 +95,9 @@
 # CHECK:  bl 0x[[#%x, A]] <_a>
 # CHECK:  bl 0x[[#%x, B]] <_b>
 # CHECK:  bl 0x[[#%x, C]] <_c>
-# CHECK:  bl 0x[[#%x, D:]] <_d>
+# CHECK:  bl 0x[[#%x, D]] <_d>
 # CHECK:  bl 0x[[#%x, E:]] <_e>
-# CHECK:  bl 0x[[#%x, F_THUNK_0]] <_f.thunk.0>
+# CHECK:  bl 0x[[#%x, F:]] <_f>
 # CHECK:  bl 0x[[#%x, G_THUNK_0]] <_g.thunk.0>
 # CHECK:  bl 0x[[#%x, H_THUNK_0]] <_h.thunk.0>
 # CHECK:  bl 0x[[#%x, NAN_THUNK_0]] <___nan.thunk.0>
@@ -132,8 +132,8 @@
 # CHECK:  bl 0x[[#%x, C]] <_c>
 # CHECK:  bl 0x[[#%x, D]] <_d>
 # CHECK:  bl 0x[[#%x, E]] <_e>
-# CHECK:  bl 0x[[#%x, F_THUNK_0]] <_f.thunk.0>
-# CHECK:  bl 0x[[#%x, G_THUNK_0]] <_g.thunk.0>
+# CHECK:  bl 0x[[#%x, F]] <_f>
+# CHECK:  bl 0x[[#%x, G:]] <_g>
 # CHECK:  bl 0x[[#%x, H_THUNK_0]] <_h.thunk.0>
 # CHECK:  bl 0x[[#%x, NAN_THUNK_0]] <___nan.thunk.0>
 
@@ -143,9 +143,9 @@
 # CHECK:  bl 0x[[#%x, C]] <_c>
 # CHECK:  bl 0x[[#%x, D]] <_d>
 # CHECK:  bl 0x[[#%x, E]] <_e>
-# CHECK:  bl 0x[[#%x, F:]] <_f>
-# CHECK:  bl 0x[[#%x, G:]] <_g>
-# CHECK:  bl 0x[[#%x, H_THUNK_0]] <_h.thunk.0>
+# CHECK:  bl 0x[[#%x, F]] <_f>
+# CHECK:  bl 0x[[#%x, G]] <_g>
+# CHECK:  bl 0x[[#%x, H:]] <_h>
 # CHECK:  bl 0x[[#%x, NAN_THUNK_0]] <___nan.thunk.0>
 
 # CHECK: [[#%x, F_PAGE + F_OFFSET]] <_f>:
@@ -156,7 +156,7 @@
 # CHECK:  bl 0x[[#%x, E]] <_e>
 # CHECK:  bl 0x[[#%x, F]] <_f>
 # CHECK:  bl 0x[[#%x, G]] <_g>
-# CHECK:  bl 0x[[#%x, H_THUNK_0]] <_h.thunk.0>
+# CHECK:  bl 0x[[#%x, H]] <_h>
 # CHECK:  bl 0x[[#%x, NAN_THUNK_0]] <___nan.thunk.0>
 
 # CHECK: [[#%x, G_PAGE + G_OFFSET]] <_g>:
@@ -167,7 +167,7 @@
 # CHECK:  bl 0x[[#%x, E]] <_e>
 # CHECK:  bl 0x[[#%x, F]] <_f>
 # CHECK:  bl 0x[[#%x, G]] <_g>
-# CHECK:  bl 0x[[#%x, H:]] <_h>
+# CHECK:  bl 0x[[#%x, H]] <_h>
 # CHECK:  bl 0x[[#%x, STUBS:]]
 
 # CHECK: [[#%x, A_THUNK_0]] <_a.thunk.0>:
