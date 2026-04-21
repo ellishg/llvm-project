@@ -211,13 +211,13 @@ void TextOutputSection::finalize() {
     assert(isec.isFinal);
     uint64_t highVA = isec.getVA() + r.offset + forwardBranchRange;
     if (addr + size > highVA) {
-      // There were too many consecutive branch instructions for `slop`
-      // above. If you hit this: For the current algorithm, just bumping up
-      // slop above and trying again is probably simplest. (See also PR51578
-      // comment 5).
-      fatal(Twine(__FUNCTION__) +
-            ": FIXME: thunk range overrun. Consider increasing the "
-            "slop-scale with `--slop-scale=<unsigned_int>`.");
+      // We can only encounter this if we have a massive section (> ~128MB) or
+      // an enormous number of branch instructions within a single section
+      // (> ~16M), neither of which is feasible in practice. To fix we could
+      // implement branch islands when the available space for thunks become too
+      // small.
+      fatal("encountered a branch whose target is out of range, but there is "
+            "no more space for a new thunk");
     }
     auto *funcSym = cast<Symbol *>(r.referent);
     ThunkInfo &thunkInfo = thunkMap[ThunkKey{funcSym, r.addend}];
@@ -264,17 +264,23 @@ void TextOutputSection::finalize() {
       branchesToProcess;
   SmallVector<std::tuple<ConcatInputSection *, Relocation *, Defined *>>
       deferredBranchRedirects;
+  unsigned numPendingThunkTargets = 0;
 
-  const uint64_t slop = config->slopScale * thunkSize;
   for (auto *isec : inputs) {
     while (!branchesToProcess.empty()) {
       auto &[callerIsec, r, thunkKey] = branchesToProcess.front();
       assert(callerIsec->isFinal);
+      auto &thunkInfo = thunkMap[thunkKey];
       if (isTargetInRange(*callerIsec, *r)) {
+        if (thunkInfo.pendingBranches.erase(r))
+          if (thunkInfo.pendingBranches.empty())
+            --numPendingThunkTargets;
         branchesToProcess.pop_front();
         continue;
       }
       if (auto *sym = getThunkInRange(*callerIsec, *r)) {
+        // The pending thunk target was already decremented when we created the
+        // thunk
         deferredBranchRedirects.emplace_back(callerIsec, r, sym);
         branchesToProcess.pop_front();
         continue;
@@ -282,9 +288,11 @@ void TextOutputSection::finalize() {
       uint64_t highVA = callerIsec->getVA() + r->offset + forwardBranchRange;
       uint64_t nextEnd =
           alignToPowerOf2(addr + size, isec->align) + isec->getSize();
-      if (nextEnd + slop <= highVA)
+      if (nextEnd + numPendingThunkTargets * thunkSize <= highVA)
         break;
 
+      thunkInfo.pendingBranches.clear();
+      --numPendingThunkTargets;
       createThunk(*callerIsec, *r);
       branchesToProcess.pop_front();
     }
@@ -314,6 +322,10 @@ void TextOutputSection::finalize() {
       auto *funcSym = cast<Symbol *>(r.referent);
       ThunkKey key{funcSym, r.addend};
       branchesToProcess.emplace_back(isec, &r, key);
+      auto &thunkInfo = thunkMap[key];
+      if (thunkInfo.pendingBranches.empty())
+        ++numPendingThunkTargets;
+      thunkInfo.pendingBranches.insert(&r);
     }
   }
   for (auto [callerIsec, r, thunk] : deferredBranchRedirects) {
@@ -327,23 +339,35 @@ void TextOutputSection::finalize() {
 
   llvm::erase_if(branchesToProcess, [&](auto &tuple) {
     auto [callerIsec, r, thunkKey] = tuple;
+    auto &thunkInfo = thunkMap[thunkKey];
+    if (isTargetInRange(*callerIsec, *r) || getThunkInRange(*callerIsec, *r)) {
+      if (thunkInfo.pendingBranches.erase(r))
+        if (thunkInfo.pendingBranches.empty())
+          --numPendingThunkTargets;
+    }
     return isTargetInRange(*callerIsec, *r);
   });
   DenseSet<ThunkKey, ThunkMapKeyInfo> branchTargets;
   for (auto [callerIsec, r, thunkKey] : branchesToProcess)
     if (!getThunkInRange(*callerIsec, *r))
       branchTargets.insert(thunkKey);
-
-  uint64_t estimatedTextEnd =
-      addr + size + branchesToProcess.size() * thunkSize;
-  uint64_t estimatedStubsEnd =
-      alignToPowerOf2(estimatedTextEnd, in.stubs->align) + in.stubs->getSize();
-  if (in.objcStubs && in.objcStubs->isNeeded())
-    estimatedStubsEnd =
-        alignToPowerOf2(estimatedStubsEnd, in.objcStubs->align) +
-        in.objcStubs->getSize();
+  assert(branchTargets.size() == numPendingThunkTargets);
 
   for (auto [isec, r, thunkKey] : branchesToProcess) {
+    uint64_t estimatedTextEnd =
+        addr + size + numPendingThunkTargets * thunkSize;
+    uint64_t estimatedStubsEnd =
+        alignToPowerOf2(estimatedTextEnd, in.stubs->align) +
+        in.stubs->getSize();
+    if (in.objcStubs && in.objcStubs->isNeeded())
+      estimatedStubsEnd =
+          alignToPowerOf2(estimatedStubsEnd, in.objcStubs->align) +
+          in.objcStubs->getSize();
+
+    auto &thunkInfo = thunkMap[thunkKey];
+    if (thunkInfo.pendingBranches.erase(r))
+      if (thunkInfo.pendingBranches.empty())
+        --numPendingThunkTargets;
     uint64_t highVA = isec->getVA() + r->offset + forwardBranchRange;
     auto *funcSym = cast<Symbol *>(r->referent);
     if ((funcSym->isInStubs() ||
@@ -366,6 +390,7 @@ void TextOutputSection::finalize() {
     }
     createThunk(*isec, *r);
   }
+  assert(numPendingThunkTargets == 0);
 
   if (thunkCount)
     log("Created " + Twine(thunkCount) + " (" +
