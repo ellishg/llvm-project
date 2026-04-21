@@ -267,6 +267,10 @@ void TextOutputSection::finalize() {
   unsigned numPendingThunkTargets = 0;
 
   for (auto *isec : inputs) {
+    bool didCreateThunk = false;
+    // If we have emitted a thunk, keep emitting a thunk until we have used up
+    // 5% of the backwards branch range
+    const uint64_t minThunkDistance = backwardBranchRange * 0.95;
     while (!branchesToProcess.empty()) {
       auto &[callerIsec, r, thunkKey] = branchesToProcess.front();
       assert(callerIsec->isFinal);
@@ -285,15 +289,19 @@ void TextOutputSection::finalize() {
         branchesToProcess.pop_front();
         continue;
       }
-      uint64_t highVA = callerIsec->getVA() + r->offset + forwardBranchRange;
+      uint64_t callVA = callerIsec->getVA() + r->offset;
+      uint64_t highVA = callVA + forwardBranchRange;
       uint64_t nextEnd =
           alignToPowerOf2(addr + size, isec->align) + isec->getSize();
+      uint64_t thunkDistance = nextEnd - callVA;
       if (nextEnd + numPendingThunkTargets * thunkSize <= highVA)
-        break;
+        if (!didCreateThunk || thunkDistance < minThunkDistance)
+          break;
 
       thunkInfo.pendingBranches.clear();
       --numPendingThunkTargets;
       createThunk(*callerIsec, *r);
+      didCreateThunk = true;
       branchesToProcess.pop_front();
     }
     finalizeOne(isec);
