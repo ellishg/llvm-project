@@ -99,6 +99,8 @@ struct ThunkInfo {
   Defined *sym = nullptr;             // private-extern symbol for active thunk
   ConcatInputSection *isec = nullptr; // input section for active thunk
 
+  llvm::DenseSet<const Relocation *> pendingBranches;
+
   // The following value is cumulative across all thunks on this function
   uint8_t sequence = 0;        // how many thunks created so-far?
 };
