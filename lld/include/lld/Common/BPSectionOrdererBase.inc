@@ -437,11 +437,11 @@ auto BPOrderer<D>::computeOrder(
 
       // The area under the curve F where F(t) is the total number of page
       // faults at step t.
-      unsigned area = 0;
+      unsigned area = 0, numSamples = 0;
       for (auto &trace : reader->getTemporalProfTraces()) {
         SmallSet<uint64_t, 0> touchedPages;
-        for (unsigned step = 0; step < trace.FunctionNameRefs.size(); step++) {
-          auto traceId = trace.FunctionNameRefs[step];
+        for (const auto &[step, traceId] :
+             llvm::enumerate(trace.FunctionNameRefs)) {
           auto [Filename, ParsedFuncName] =
               getParsedIRPGOName(reader->getSymtab().getFuncOrVarName(traceId));
           ParsedFuncName = lld::utils::getRootSymbol(ParsedFuncName);
@@ -452,9 +452,11 @@ auto BPOrderer<D>::computeOrder(
               touchedPages.insert(i);
           }
           area += touchedPages.size();
+          ++numSamples;
         }
       }
-      dbgs() << "Total area under the page fault curve: " << (float)area
+      float normalizedArea = numSamples ? (float)area / numSamples : area;
+      dbgs() << "Normalized area under the page fault curve: " << normalizedArea
              << "\n";
     }
   }

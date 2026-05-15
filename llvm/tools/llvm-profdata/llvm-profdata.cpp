@@ -3444,7 +3444,7 @@ static int order_main() {
       IdToPageNumber[Node.Id] = IdToPageNumber.size() / 32;
 
     SmallSet<unsigned, 0> TouchedPages;
-    unsigned Area = 0;
+    unsigned Area = 0, NumSamples = 0;
     for (auto &Trace : TestTraces) {
       for (auto Id : Trace.FunctionNameRefs) {
         auto It = IdToPageNumber.find(Id);
@@ -3452,10 +3452,13 @@ static int order_main() {
           continue;
         TouchedPages.insert(It->getSecond());
         Area += TouchedPages.size();
+        ++NumSamples;
       }
       TouchedPages.clear();
     }
-    OS << "# Total area under the page fault curve: " << (float)Area << "\n";
+    float NormalizedArea = NumSamples ? (float)Area / NumSamples : Area;
+    OS << "# Normalized area under the page fault curve: " << NormalizedArea
+       << "\n";
   }
   OS << "# Warning: Mach-O may prefix symbols with \"_\" depending on the "
         "linkage and this output does not take that into account. Some "
