@@ -1213,10 +1213,6 @@ static void parseBPOrdererOptions(Ctx &ctx, opt::InputArgList &args) {
 
   for (auto *arg : args.filtered(OPT_bp_compression_sort_section))
     addCompressionSortSpec(arg->getValue());
-  if (!ctx.arg.bpCompressionSortSpecs.empty() &&
-      args.hasArg(OPT_call_graph_ordering_file))
-    ErrAlways(ctx) << "--bp-compression-sort-section is incompatible with "
-                      "--call-graph-ordering-file";
   if (auto *arg = args.getLastArg(OPT_bp_compression_sort)) {
     StringRef s = arg->getValue();
     if (s == "function") {
@@ -1230,9 +1226,6 @@ static void parseBPOrdererOptions(Ctx &ctx, opt::InputArgList &args) {
       ErrAlways(ctx) << arg->getSpelling()
                      << ": expected [none|function|data|both]";
     }
-    if (s != "none" && args.hasArg(OPT_call_graph_ordering_file))
-      ErrAlways(ctx) << "--bp-compression-sort is incompatible with "
-                        "--call-graph-ordering-file";
   }
   if (auto *arg = args.getLastArg(OPT_bp_startup_sort)) {
     StringRef s = arg->getValue();
@@ -1241,9 +1234,6 @@ static void parseBPOrdererOptions(Ctx &ctx, opt::InputArgList &args) {
     } else if (s != "none") {
       ErrAlways(ctx) << arg->getSpelling() << ": expected [none|function]";
     }
-    if (s != "none" && args.hasArg(OPT_call_graph_ordering_file))
-      ErrAlways(ctx) << "--bp-startup-sort=function is incompatible with "
-                        "--call-graph-ordering-file";
   }
 
   ctx.arg.bpCompressionSortStartupFunctions =

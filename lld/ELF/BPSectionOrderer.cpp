@@ -63,11 +63,12 @@ struct BPOrdererELF : lld::BPOrderer<BPOrdererELF> {
 };
 } // namespace
 
-DenseMap<const InputSectionBase *, int> elf::runBalancedPartitioning(
+void elf::runBalancedPartitioning(
     Ctx &ctx, StringRef profilePath,
     ArrayRef<BPCompressionSortSpec> compressionSortSpecs,
     bool forFunctionCompression, bool forDataCompression,
-    bool compressionSortStartupFunctions, bool verbose) {
+    bool compressionSortStartupFunctions, bool verbose,
+    DenseMap<const InputSectionBase *, int> &sectionPriorities) {
   // Collect candidate sections and associated symbols.
   SmallVector<InputSectionBase *> sections;
   DenseMap<CachedHashStringRef, std::set<unsigned>> rootSymbolToSectionIdxs;
@@ -95,8 +96,8 @@ DenseMap<const InputSectionBase *, int> elf::runBalancedPartitioning(
   for (ELFFileBase *file : ctx.objectFiles)
     for (Symbol *sym : file->getLocalSymbols())
       addSection(*sym);
-  return orderer.computeOrder(profilePath, compressionSortSpecs,
-                              forFunctionCompression, forDataCompression,
-                              compressionSortStartupFunctions, verbose,
-                              sections, rootSymbolToSectionIdxs);
+  orderer.computeOrder(profilePath, compressionSortSpecs,
+                       forFunctionCompression, forDataCompression,
+                       compressionSortStartupFunctions, verbose, sections,
+                       rootSymbolToSectionIdxs, sectionPriorities);
 }

@@ -1108,18 +1108,18 @@ static void maybeShuffle(Ctx &ctx,
 // that don't appear in the order file.
 static DenseMap<const InputSectionBase *, int> buildSectionOrder(Ctx &ctx) {
   DenseMap<const InputSectionBase *, int> sectionOrder;
+  if (!ctx.arg.callGraphProfile.empty())
+    sectionOrder = computeCallGraphProfileOrder(ctx);
   if (ctx.arg.bpStartupFunctionSort || ctx.arg.bpFunctionOrderForCompression ||
       ctx.arg.bpDataOrderForCompression ||
       !ctx.arg.bpCompressionSortSpecs.empty()) {
     TimeTraceScope timeScope("Balanced Partitioning Section Orderer");
-    sectionOrder = runBalancedPartitioning(
+    runBalancedPartitioning(
         ctx, ctx.arg.bpStartupFunctionSort ? ctx.arg.irpgoProfilePath : "",
         ctx.arg.bpCompressionSortSpecs, ctx.arg.bpFunctionOrderForCompression,
         ctx.arg.bpDataOrderForCompression,
         ctx.arg.bpCompressionSortStartupFunctions,
-        ctx.arg.bpVerboseSectionOrderer);
-  } else if (!ctx.arg.callGraphProfile.empty()) {
-    sectionOrder = computeCallGraphProfileOrder(ctx);
+        ctx.arg.bpVerboseSectionOrderer, sectionOrder);
   }
 
   if (ctx.arg.symbolOrderingFile.empty())

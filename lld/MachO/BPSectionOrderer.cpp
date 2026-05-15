@@ -113,10 +113,11 @@ private:
 };
 } // namespace
 
-DenseMap<const InputSection *, int> lld::macho::runBalancedPartitioning(
+void lld::macho::runBalancedPartitioning(
     StringRef profilePath, ArrayRef<BPCompressionSortSpec> compressionSortSpecs,
     bool forFunctionCompression, bool forDataCompression,
-    bool compressionSortStartupFunctions, bool verbose) {
+    bool compressionSortStartupFunctions, bool verbose,
+    DenseMap<const InputSection *, int> &sectionPriorities) {
   // Collect candidate sections and associated symbols.
   SmallVector<InputSection *> sections;
   DenseMap<CachedHashStringRef, std::set<unsigned>> rootSymbolToSectionIdxs;
@@ -148,8 +149,8 @@ DenseMap<const InputSection *, int> lld::macho::runBalancedPartitioning(
     }
   }
 
-  return BPOrdererMachO().computeOrder(
+  BPOrdererMachO().computeOrder(
       profilePath, compressionSortSpecs, forFunctionCompression,
       forDataCompression, compressionSortStartupFunctions, verbose, sections,
-      rootSymbolToSectionIdxs);
+      rootSymbolToSectionIdxs, sectionPriorities);
 }

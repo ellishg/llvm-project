@@ -2051,12 +2051,6 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
     config->slopScale = slop;
   }
 
-  auto IncompatWithCGSort = [&](StringRef firstArgStr) {
-    // Throw an error only if --call-graph-profile-sort is explicitly specified
-    if (config->callGraphProfileSort)
-      if (const Arg *arg = args.getLastArgNoClaim(OPT_call_graph_profile_sort))
-        error(firstArgStr + " is incompatible with " + arg->getSpelling());
-  };
   if (args.hasArg(OPT_irpgo_profile_sort) ||
       args.hasArg(OPT_irpgo_profile_sort_eq))
     warn("--irpgo-profile-sort is deprecated. Please use "
@@ -2067,7 +2061,6 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   if (const Arg *arg = args.getLastArg(OPT_irpgo_profile_sort)) {
     config->irpgoProfilePath = arg->getValue();
     config->bpStartupFunctionSort = true;
-    IncompatWithCGSort(arg->getSpelling());
   }
   config->bpCompressionSortStartupFunctions =
       args.hasFlag(OPT_bp_compression_sort_startup_functions,
@@ -2079,8 +2072,6 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
     } else if (startupSortStr != "none") {
       error("unknown value `" + startupSortStr + "` for " + arg->getSpelling());
     }
-    if (startupSortStr != "none")
-      IncompatWithCGSort(arg->getSpelling());
   }
   if (!config->bpStartupFunctionSort &&
       config->bpCompressionSortStartupFunctions)
@@ -2131,8 +2122,6 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
 
   for (const Arg *arg : args.filtered(OPT_bp_compression_sort_section))
     addCompressionSortSpec(arg->getValue());
-  if (!config->bpCompressionSortSpecs.empty())
-    IncompatWithCGSort("--bp-compression-sort-section");
   if (const Arg *arg = args.getLastArg(OPT_bp_compression_sort)) {
     StringRef compressionSortStr = arg->getValue();
     if (compressionSortStr == "function") {
@@ -2146,8 +2135,6 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
       error("unknown value `" + compressionSortStr + "` for " +
             arg->getSpelling());
     }
-    if (compressionSortStr != "none")
-      IncompatWithCGSort(arg->getSpelling());
   }
   config->bpVerboseSectionOrderer = args.hasArg(OPT_verbose_bp_section_orderer);
 

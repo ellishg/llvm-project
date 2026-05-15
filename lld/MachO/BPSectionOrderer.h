@@ -27,11 +27,12 @@ class InputSection;
 ///
 /// It is important that .subsections_via_symbols is used to ensure functions
 /// and data are in their own sections and thus can be reordered.
-llvm::DenseMap<const InputSection *, int> runBalancedPartitioning(
+void runBalancedPartitioning(
     llvm::StringRef profilePath,
     llvm::ArrayRef<BPCompressionSortSpec> compressionSortSpecs,
     bool forFunctionCompression, bool forDataCompression,
-    bool compressionSortStartupFunctions, bool verbose);
+    bool compressionSortStartupFunctions, bool verbose,
+    llvm::DenseMap<const InputSection *, int> &sectionPriorities);
 
 } // namespace lld::macho
 

@@ -372,17 +372,7 @@ void macho::PriorityBuilder::parseOrderFile(StringRef path) {
 DenseMap<const InputSection *, int>
 macho::PriorityBuilder::buildInputSectionPriorities() {
   DenseMap<const InputSection *, int> sectionPriorities;
-  if (config->bpStartupFunctionSort || config->bpFunctionOrderForCompression ||
-      config->bpDataOrderForCompression ||
-      !config->bpCompressionSortSpecs.empty()) {
-    TimeTraceScope timeScope("Balanced Partitioning Section Orderer");
-    sectionPriorities = runBalancedPartitioning(
-        config->bpStartupFunctionSort ? config->irpgoProfilePath : "",
-        config->bpCompressionSortSpecs, config->bpFunctionOrderForCompression,
-        config->bpDataOrderForCompression,
-        config->bpCompressionSortStartupFunctions,
-        config->bpVerboseSectionOrderer);
-  } else if (config->callGraphProfileSort) {
+  if (config->callGraphProfileSort) {
     // Sort sections by the profile data provided by __LLVM,__cg_profile
     // sections.
     //
@@ -391,6 +381,17 @@ macho::PriorityBuilder::buildInputSectionPriorities() {
     // density metric to further improve locality.
     TimeTraceScope timeScope("Call graph profile sort");
     sectionPriorities = CallGraphSort(callGraphProfile).run();
+  }
+  if (config->bpStartupFunctionSort || config->bpFunctionOrderForCompression ||
+      config->bpDataOrderForCompression ||
+      !config->bpCompressionSortSpecs.empty()) {
+    TimeTraceScope timeScope("Balanced Partitioning Section Orderer");
+    runBalancedPartitioning(
+        config->bpStartupFunctionSort ? config->irpgoProfilePath : "",
+        config->bpCompressionSortSpecs, config->bpFunctionOrderForCompression,
+        config->bpDataOrderForCompression,
+        config->bpCompressionSortStartupFunctions,
+        config->bpVerboseSectionOrderer, sectionPriorities);
   }
 
   if (priorities.empty())

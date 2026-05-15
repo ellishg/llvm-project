@@ -61,14 +61,14 @@ template <class D> struct BPOrderer {
   //   program startup.
   // * compressionSortStartupFunctions: if profilePath is specified, allocate
   //   extra utility vertices to prioritize nearby function similarity.
-  auto computeOrder(llvm::StringRef profilePath,
+  void computeOrder(llvm::StringRef profilePath,
                     llvm::ArrayRef<BPCompressionSortSpec> compressionSortSpecs,
                     bool forFunctionCompression, bool forDataCompression,
                     bool compressionSortStartupFunctions, bool verbose,
                     llvm::ArrayRef<Section *> sections,
                     const DenseMap<CachedHashStringRef, std::set<unsigned>>
-                        &rootSymbolToSectionIdxs)
-      -> llvm::DenseMap<const Section *, int>;
+                        &rootSymbolToSectionIdxs,
+                    llvm::DenseMap<const Section *, int> &sectionPriorities);
 
   std::optional<StringRef> static getResolvedLinkageName(StringRef name) {
     return {};
@@ -157,13 +157,14 @@ static SmallVector<std::pair<unsigned, UtilityNodes>> getUnsForCompression(
 }
 
 template <class D>
-auto BPOrderer<D>::computeOrder(
+void BPOrderer<D>::computeOrder(
     StringRef profilePath, ArrayRef<BPCompressionSortSpec> compressionSortSpecs,
     bool forFunctionCompression, bool forDataCompression,
     bool compressionSortStartupFunctions, bool verbose,
     ArrayRef<Section *> sections,
     const DenseMap<CachedHashStringRef, std::set<unsigned>>
-        &rootSymbolToSectionIdxs) -> DenseMap<const Section *, int> {
+        &rootSymbolToSectionIdxs,
+    DenseMap<const Section *, int> &sectionPriorities) {
   TimeTraceScope timeScope("Setup Balanced Partitioning");
   DenseMap<const void *, uint64_t> sectionToIdx;
   for (auto [i, isec] : llvm::enumerate(sections))
@@ -459,9 +460,14 @@ auto BPOrderer<D>::computeOrder(
     }
   }
 
-  DenseMap<const Section *, int> sectionPriorities;
   int prio = -orderedSections.size();
+  if (!sectionPriorities.empty()) {
+    auto minIt =
+        llvm::min_element(sectionPriorities, [](const auto &a, const auto &b) {
+          return a.second < b.second;
+        });
+    prio += minIt->second;
+  }
   for (const auto *isec : orderedSections)
     sectionPriorities[isec] = prio++;
-  return sectionPriorities;
 }

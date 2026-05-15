@@ -29,11 +29,12 @@ class InputSectionBase;
 /// It is important that -ffunction-sections and -fdata-sections compiler flags
 /// are used to ensure functions and data are in their own sections and thus
 /// can be reordered.
-llvm::DenseMap<const InputSectionBase *, int> runBalancedPartitioning(
+void runBalancedPartitioning(
     Ctx &ctx, llvm::StringRef profilePath,
     llvm::ArrayRef<BPCompressionSortSpec> compressionSortSpecs,
     bool forFunctionCompression, bool forDataCompression,
-    bool compressionSortStartupFunctions, bool verbose);
+    bool compressionSortStartupFunctions, bool verbose,
+    llvm::DenseMap<const InputSectionBase *, int> &sectionPriorities);
 
 } // namespace lld::elf
 
