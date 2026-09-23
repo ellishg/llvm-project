@@ -526,8 +526,9 @@ Error RawInstrProfReader<IntPtrT>::readHeader() {
 }
 
 template <class IntPtrT>
-Error RawInstrProfReader<IntPtrT>::readNextHeader(const char *CurrentPos) {
-  const char *End = DataBuffer->getBufferEnd();
+Error RawInstrProfReader<IntPtrT>::readNextHeader(const uint8_t *CurrentPos) {
+  const uint8_t *End =
+      reinterpret_cast<const uint8_t *>(DataBuffer->getBufferEnd());
   // Skip zero padding between profiles.
   while (CurrentPos != End && *CurrentPos == 0)
     ++CurrentPos;
@@ -621,7 +622,7 @@ Error RawInstrProfReader<IntPtrT>::readHeader(
   CountersDelta = swap(Header.CountersDelta);
   BitmapDelta = swap(Header.BitmapDelta);
   UniformCountersDelta = swap(Header.UniformCountersDelta);
-  NamesDelta = swap(Header.NamesDelta);
+  ValueInfoDelta = swap(Header.ValueInfoDelta);
   auto NumData = swap(Header.NumData);
   auto PaddingBytesBeforeCounters = swap(Header.PaddingBytesBeforeCounters);
   auto CountersSize = swap(Header.NumCounters) * getCounterTypeSize();
@@ -703,7 +704,7 @@ Error RawInstrProfReader<IntPtrT>::readHeader(
     // These sizes in the raw file are zero because we constructed them in the
     // Correlator.
     if (!(DataSize == 0 && NamesSize == 0 && CountersDelta == 0 &&
-          BitmapDelta == 0 && NamesDelta == 0))
+          BitmapDelta == 0 && ValueInfoDelta == 0))
       return error(instrprof_error::unexpected_correlation_info);
     Data = Correlator->getDataPointer();
     DataEnd = Data + Correlator->getDataSize();
@@ -738,6 +739,28 @@ Error RawInstrProfReader<IntPtrT>::readHeader(
   UniformCountersStart = Start + UniformCountersOffset;
   UniformCountersEnd = UniformCountersStart + UniformCountersSectionSize;
   ValueDataStart = reinterpret_cast<const uint8_t *>(Start + ValueDataOffset);
+  NextValueData = ValueDataStart;
+  ValueDataRecords.clear();
+
+  // Correlated data records can omit functions whose debug-info probes were
+  // dropped. Index the complete positional value-profile stream so a trailing
+  // omitted function is not mistaken for the next raw profile header.
+  const InstrProfCorrelator *ActiveCorrelator =
+      Correlator ? Correlator : BIDFetcherCorrelator.get();
+  uint64_t NumValueProfData =
+      ActiveCorrelator ? ActiveCorrelator->getNumValueProfData() : NumData;
+  // Some non-correlated buffer-writing APIs do not serialize value data.
+  if (!ActiveCorrelator && ValueDataStart == BufferEnd)
+    NumValueProfData = 0;
+  ValueDataRecords.reserve(NumValueProfData);
+  for (uint64_t I = 0; I < NumValueProfData; ++I) {
+    auto VDataPtrOrErr = ValueProfData::getValueProfData(
+        NextValueData, BufferEnd, getDataEndianness());
+    if (!VDataPtrOrErr)
+      return VDataPtrOrErr.takeError();
+    ValueDataRecords.push_back(NextValueData);
+    NextValueData += VDataPtrOrErr.get()->getSize();
+  }
 
   std::unique_ptr<InstrProfSymtab> NewSymtab = std::make_unique<InstrProfSymtab>();
   if (Error E = createSymtab(*NewSymtab))
@@ -920,19 +943,35 @@ template <class IntPtrT>
 Error RawInstrProfReader<IntPtrT>::readValueProfilingData(
     InstrProfRecord &Record) {
   Record.clearValueData();
-  CurValueDataSize = 0;
-  // Need to match the logic in value profile dumper code in compiler-rt:
-  uint32_t NumValueKinds = 0;
-  for (uint32_t I = 0; I < IPVK_Last + 1; I++)
-    NumValueKinds += (Data->NumValueSites[I] != 0);
-
-  if (!NumValueKinds)
+  auto *BufferEnd =
+      reinterpret_cast<const uint8_t *>(DataBuffer->getBufferEnd());
+  if (ValueDataStart == BufferEnd)
     return success();
 
-  Expected<std::unique_ptr<ValueProfData>> VDataPtrOrErr =
-      ValueProfData::getValueProfData(
-          ValueDataStart, (const unsigned char *)DataBuffer->getBufferEnd(),
-          getDataEndianness());
+  IntPtrT RelativeValuesPtr = swap(Data->RelativeValuesPtr);
+  const bool IsCorrelated = Correlator || BIDFetcherCorrelator;
+  if (IsCorrelated && RelativeValuesPtr == std::numeric_limits<IntPtrT>::max())
+    return success();
+  ptrdiff_t VPInfoOffset =
+      IsCorrelated ? RelativeValuesPtr : RelativeValuesPtr - ValueInfoDelta;
+  if (VPInfoOffset < 0)
+    return error(instrprof_error::malformed,
+                 "value profile info offset is negative");
+  uint64_t VPInfoSize =
+      alignTo(sizeof(IntPtrT) + sizeof(uint16_t) * (ValueKindLast + 1),
+              sizeof(IntPtrT));
+  if (VPInfoOffset % VPInfoSize)
+    return error(instrprof_error::malformed,
+                 "misaligned value profile info offset");
+
+  uint64_t VPInfoIndex = VPInfoOffset / VPInfoSize;
+  if (VPInfoIndex >= ValueDataRecords.size())
+    return error(instrprof_error::malformed,
+                 "value profile info offset is out of range");
+  const uint8_t *ValueDataPtr = ValueDataRecords[VPInfoIndex];
+
+  auto VDataPtrOrErr = ValueProfData::getValueProfData(ValueDataPtr, BufferEnd,
+                                                       getDataEndianness());
 
   if (Error E = VDataPtrOrErr.takeError())
     return E;
@@ -941,7 +980,6 @@ Error RawInstrProfReader<IntPtrT>::readValueProfilingData(
   // indirect call targets.  The function pointers from the raw profile are
   // remapped into function name hashes.
   VDataPtrOrErr.get()->deserializeTo(Record, Symtab.get());
-  CurValueDataSize = VDataPtrOrErr.get()->getSize();
   return success();
 }
 
@@ -950,8 +988,7 @@ Error RawInstrProfReader<IntPtrT>::readNextRecord(NamedInstrProfRecord &Record) 
   // Keep reading profiles that consist of only headers and no profile data and
   // counters.
   while (atEnd())
-    // At this point, ValueDataStart field points to the next header.
-    if (Error E = readNextHeader(getNextHeaderPos()))
+    if (Error E = readNextHeader(NextValueData))
       return error(std::move(E));
 
   // Read name and set it in Record.

@@ -134,9 +134,8 @@ record, in a similar way to how counters are referenced as explained by
 Similar to [CountersDelta](#CountersDelta) field, this field may not be used in non-PGO variants
 of profiles.
 
-**`NamesDelta`**
-Records the in-memory address of name section. Not used except for raw profile
-reader error checking.
+**`ValueInfoDelta`**
+TODO
 
 **`NumVTables`**
 Records the number of instrumented vtable entries in the binary. Used for

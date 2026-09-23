@@ -298,6 +298,8 @@ private:
     GlobalVariable *RegionCounters = nullptr;
     GlobalVariable *UniformCounters =
         nullptr; // Per-block uniform-entry counters
+    GlobalVariable *VPInfo = nullptr;
+    GlobalVariable *VPValues = nullptr;
     GlobalVariable *DataVar = nullptr;
     GlobalVariable *RegionBitmaps = nullptr;
     uint32_t NumBitmapBytes = 0;
@@ -312,6 +314,7 @@ private:
   /// instruction that produces the profile relocation bias.
   DenseMap<const Function *, LoadInst *> FunctionToProfileBiasMap;
   std::vector<GlobalValue *> CompilerUsedVars;
+  std::vector<GlobalValue *> ValueProfileVars;
   std::vector<GlobalValue *> UsedVars;
   std::vector<GlobalVariable *> ReferencedNames;
   // The list of virtual table variables of which the VTableProfData is
@@ -447,6 +450,9 @@ private:
 
   /// Emit value nodes section for value profiling.
   void emitVNodes();
+
+  /// Emit __profvp_ symbols in __llvm_prf_vals for value profiling.
+  void emitValueProfileInfo(InstrProfCntrInstBase *Inc);
 
   /// Emit runtime registration functions for each profile data variable.
   void emitRegistration();
@@ -1049,23 +1055,18 @@ bool InstrLowerer::lower() {
   if (!ContainsProfiling && !CoverageNamesVar)
     return MadeChange;
 
-  // We did not know how many value sites there would be inside
-  // the instrumented function. This is counting the number of instrumented
-  // target value sites to enter it as field in the profile data variable.
   for (Function &F : M) {
     InstrProfCntrInstBase *FirstProfInst = nullptr;
     for (BasicBlock &BB : F) {
       for (auto I = BB.begin(), E = BB.end(); I != E; I++) {
-        if (auto *Ind = dyn_cast<InstrProfValueProfileInst>(I))
-          computeNumValueSiteCounts(Ind);
-        else {
-          if (FirstProfInst == nullptr &&
-              (isa<InstrProfIncrementInst>(I) || isa<InstrProfCoverInst>(I)))
-            FirstProfInst = dyn_cast<InstrProfCntrInstBase>(I);
-          // If the MCDCBitmapParameters intrinsic seen, create the bitmaps.
-          if (const auto &Params = dyn_cast<InstrProfMCDCBitmapParameters>(I))
-            static_cast<void>(getOrCreateRegionBitmaps(Params));
-        }
+        if (isa<InstrProfValueProfileInst>(I))
+          continue;
+        if (FirstProfInst == nullptr &&
+            (isa<InstrProfIncrementInst>(I) || isa<InstrProfCoverInst>(I)))
+          FirstProfInst = dyn_cast<InstrProfCntrInstBase>(I);
+        // If the MCDCBitmapParameters intrinsic seen, create the bitmaps.
+        if (const auto &Params = dyn_cast<InstrProfMCDCBitmapParameters>(I))
+          static_cast<void>(getOrCreateRegionBitmaps(Params));
       }
     }
 
@@ -1145,30 +1146,24 @@ void InstrLowerer::computeNumValueSiteCounts(InstrProfValueProfileInst *Ind) {
 }
 
 void InstrLowerer::lowerValueProfileInst(InstrProfValueProfileInst *Ind) {
-  // TODO: Value profiling heavily depends on the data section which is omitted
-  // in lightweight mode. We need to move the value profile pointer to the
-  // Counter struct to get this working.
-  assert(
-      ProfileCorrelate == InstrProfCorrelator::NONE &&
-      "Value profiling is not yet supported with lightweight instrumentation");
+  assert(ProfileCorrelate != InstrProfCorrelator::BINARY &&
+         "Value profiling is not yet supported with binary correlation");
   GlobalVariable *Name = Ind->getName();
   auto It = ProfileDataMap.find(Name);
-  assert(It != ProfileDataMap.end() && It->second.DataVar &&
+  assert(It != ProfileDataMap.end() &&
          "value profiling detected in function with no counter increment");
+  auto &PD = It->second;
 
-  GlobalVariable *DataVar = It->second.DataVar;
   uint64_t ValueKind = Ind->getValueKind()->getZExtValue();
   uint64_t Index = Ind->getIndex()->getZExtValue();
   for (uint32_t Kind = IPVK_First; Kind < ValueKind; ++Kind)
-    Index += It->second.NumValueSites[Kind];
+    Index += PD.NumValueSites[Kind];
 
   IRBuilder<> Builder(Ind);
   bool IsMemOpSize = (Ind->getValueKind()->getZExtValue() ==
                       llvm::InstrProfValueKind::IPVK_MemOPSize);
   CallInst *Call = nullptr;
   auto *TLI = &GetTLI(*Ind->getFunction());
-  auto *NormalizedDataVarPtr = ConstantExpr::getPointerBitCastOrAddrSpaceCast(
-      DataVar, PointerType::get(M.getContext(), 0));
 
   // To support value profiling calls within Windows exception handlers, funclet
   // information contained within operand bundles needs to be copied over to
@@ -1176,18 +1171,12 @@ void InstrLowerer::lowerValueProfileInst(InstrProfValueProfileInst *Ind) {
   // WinEHPrepare pass.
   SmallVector<OperandBundleDef, 1> OpBundles;
   Ind->getOperandBundlesAsDefs(OpBundles);
-  if (!IsMemOpSize) {
-    Value *Args[3] = {Ind->getTargetValue(), NormalizedDataVarPtr,
-                      Builder.getInt32(Index)};
-    Call = Builder.CreateCall(getOrInsertValueProfilingCall(M, *TLI), Args,
-                              OpBundles);
-  } else {
-    Value *Args[3] = {Ind->getTargetValue(), NormalizedDataVarPtr,
-                      Builder.getInt32(Index)};
-    Call = Builder.CreateCall(
-        getOrInsertValueProfilingCall(M, *TLI, ValueProfilingCallType::MemOp),
-        Args, OpBundles);
-  }
+  auto Callee = getOrInsertValueProfilingCall(
+      M, *TLI,
+      IsMemOpSize ? ValueProfilingCallType::MemOp
+                  : ValueProfilingCallType::Default);
+  Value *Args[3] = {Ind->getTargetValue(), PD.VPInfo, Builder.getInt32(Index)};
+  Call = Builder.CreateCall(Callee, Args, OpBundles);
   if (auto AK = TLI->getExtAttrForI32Param(false))
     Call->addParamAttr(2, AK);
   Ind->replaceAllUsesWith(Call);
@@ -1953,6 +1942,8 @@ InstrLowerer::getOrCreateRegionCounters(InstrProfCntrInstBase *Inc) {
   auto *CounterPtr = setupProfileSection(Inc, IPSK_cnts);
   PD.RegionCounters = CounterPtr;
 
+  emitValueProfileInfo(Inc);
+
   if (ProfileCorrelate == InstrProfCorrelator::DEBUG_INFO) {
     LLVMContext &Ctx = M.getContext();
     Function *Fn = Inc->getParent()->getParent();
@@ -1982,6 +1973,14 @@ InstrLowerer::getOrCreateRegionCounters(InstrProfCntrInstBase *Inc) {
           /*Decl=*/nullptr, /*TemplateParams=*/nullptr, /*AlignInBits=*/0,
           Annotations);
       CounterPtr->addDebugInfo(DICounter);
+      if (PD.VPInfo) {
+        auto *DIVPInfo = DB.createGlobalVariableExpression(
+            SP, PD.VPInfo->getName(), /*LinkageName=*/StringRef(),
+            SP->getFile(),
+            /*LineNo=*/0, DB.createUnspecifiedType("Value Profile Data Type"),
+            PD.VPInfo->hasLocalLinkage());
+        PD.VPInfo->addDebugInfo(DIVPInfo);
+      }
       DB.finalizeSubprogram(SP);
       DB.finalize();
     }
@@ -2075,28 +2074,10 @@ void InstrLowerer::createDataVariable(InstrProfCntrInstBase *Inc) {
   std::string DataVarName =
       getVarName(Inc, getInstrProfDataVarPrefix(), Renamed);
 
-  auto *Int8PtrTy = PointerType::getUnqual(Ctx);
-  // Allocate statically the array of pointers to value profile nodes for
-  // the current function.
-  Constant *ValuesPtrExpr = ConstantPointerNull::get(Int8PtrTy);
+  // TODO: Remove NumValueSites from data section
   uint64_t NS = 0;
   for (uint32_t Kind = IPVK_First; Kind <= IPVK_Last; ++Kind)
     NS += PD.NumValueSites[Kind];
-  if (NS > 0 && ValueProfileStaticAlloc &&
-      !needsRuntimeRegistrationOfSectionRange(TT)) {
-    ArrayType *ValuesTy = ArrayType::get(Type::getInt64Ty(Ctx), NS);
-    auto *ValuesVar = new GlobalVariable(
-        M, ValuesTy, false, Linkage, Constant::getNullValue(ValuesTy),
-        getVarName(Inc, getInstrProfValuesVarPrefix(), Renamed));
-    ValuesVar->setVisibility(Visibility);
-    setGlobalVariableLargeSection(TT, *ValuesVar);
-    ValuesVar->setSection(
-        getInstrProfSectionName(IPSK_vals, TT.getObjectFormat()));
-    ValuesVar->setAlignment(Align(8));
-    maybeSetComdat(ValuesVar, Fn, CntsVarName);
-    ValuesPtrExpr = ConstantExpr::getPointerBitCastOrAddrSpaceCast(
-        ValuesVar, PointerType::get(Fn->getContext(), 0));
-  }
 
   uint64_t NumCounters = Inc->getNumCounters()->getZExtValue();
 
@@ -2154,7 +2135,9 @@ void InstrLowerer::createDataVariable(InstrProfCntrInstBase *Inc) {
     Visibility = GlobalValue::ProtectedVisibility;
   auto *Data =
       new GlobalVariable(M, DataTy, false, Linkage, nullptr, DataVarName);
-
+  Constant *RelativeValuesPtr =
+      ConstantExpr::getSub(ConstantExpr::getPtrToInt(PD.VPInfo, IntPtrTy),
+                           ConstantExpr::getPtrToInt(Data, IntPtrTy));
   Constant *RelativeCounterPtr;
   Constant *RelativeUniformCounterPtr = ConstantInt::get(IntPtrTy, 0);
   GlobalVariable *BitmapPtr = PD.RegionBitmaps;
@@ -2220,6 +2203,85 @@ void InstrLowerer::createDataVariable(InstrProfCntrInstBase *Inc) {
   NamePtr->setLinkage(GlobalValue::PrivateLinkage);
   // Collect the referenced names to be used by emitNameData.
   ReferencedNames.push_back(NamePtr);
+}
+
+void InstrLowerer::emitValueProfileInfo(InstrProfCntrInstBase *Inc) {
+  GlobalVariable *NamePtr = Inc->getName();
+  auto &PD = ProfileDataMap[NamePtr];
+  if (PD.VPInfo)
+    return;
+
+  Function *Fn = Inc->getParent()->getParent();
+  for (BasicBlock &BB : *Fn)
+    for (Instruction &I : BB)
+      if (auto *VP = dyn_cast<InstrProfValueProfileInst>(&I))
+        computeNumValueSiteCounts(VP);
+
+  constexpr uint32_t NumVPKinds = IPVK_Last - IPVK_First + 1;
+  uint32_t TotalNumValueSites = 0;
+  for (uint32_t Kind = IPVK_First; Kind <= IPVK_Last; ++Kind)
+    TotalNumValueSites += PD.NumValueSites[Kind];
+
+  GlobalValue::LinkageTypes Linkage = NamePtr->getLinkage();
+  GlobalValue::VisibilityTypes Visibility = NamePtr->getVisibility();
+
+  // This is to keep consistent with per-function profile data
+  // for correctness.
+  if (TT.isOSBinFormatXCOFF()) {
+    Linkage = GlobalValue::PrivateLinkage;
+    Visibility = GlobalValue::DefaultVisibility;
+  }
+
+  auto &Ctx = M.getContext();
+  auto *PtrTy = PointerType::getUnqual(Ctx);
+  auto *Int16Ty = Type::getInt16Ty(Ctx);
+  auto *NumValueSitesTy = ArrayType::get(Int16Ty, NumVPKinds);
+
+  bool Renamed;
+  std::string CntsVarName =
+      getVarName(Inc, getInstrProfCountersVarPrefix(), Renamed);
+  if (ValueProfileStaticAlloc && TotalNumValueSites) {
+    auto *ValuesTy = ArrayType::get(Type::getInt64Ty(Ctx), TotalNumValueSites);
+    auto *ValuesVar = new GlobalVariable(
+        M, ValuesTy, /*isConstant=*/false, Linkage,
+        Constant::getNullValue(ValuesTy),
+        getVarName(Inc, getInstrProfValuesVarPrefix(), Renamed));
+    ValuesVar->setVisibility(Visibility);
+    setGlobalVariableLargeSection(TT, *ValuesVar);
+    ValuesVar->setSection(
+        getInstrProfSectionName(IPSK_vals, TT.getObjectFormat()));
+    ValuesVar->setAlignment(Align(8));
+    maybeSetComdat(ValuesVar, Fn, CntsVarName);
+    ValueProfileVars.push_back(ValuesVar);
+    PD.VPValues = ValuesVar;
+  }
+
+  Type *VPInfoTypes[] = {
+#define INSTR_PROF_VALUE_INFO(Type, LLVMType, Name, Initializer) LLVMType,
+#include "llvm/ProfileData/InstrProfData.inc"
+  };
+  auto *VPInfoTy = StructType::get(Ctx, ArrayRef(VPInfoTypes));
+
+  Constant *NumValueSitesVals[NumVPKinds];
+  for (uint32_t Kind = IPVK_First; Kind <= IPVK_Last; ++Kind)
+    NumValueSitesVals[Kind] = ConstantInt::get(Int16Ty, PD.NumValueSites[Kind]);
+  Constant *ValuesPtr = PD.VPValues ? static_cast<Constant *>(PD.VPValues)
+                                    : ConstantPointerNull::get(PtrTy);
+  Constant *VPInfoVals[] = {
+#define INSTR_PROF_VALUE_INFO(Type, LLVMType, Name, Initializer) Initializer,
+#include "llvm/ProfileData/InstrProfData.inc"
+  };
+
+  auto *VPInfo = new GlobalVariable(
+      M, VPInfoTy, /*isConstant=*/false, Linkage,
+      ConstantStruct::get(VPInfoTy, VPInfoVals),
+      getVarName(Inc, getInstrProfValueInfoVarPrefix(), Renamed));
+  VPInfo->setVisibility(Visibility);
+  setGlobalVariableLargeSection(TT, *VPInfo);
+  VPInfo->setSection(getInstrProfSectionName(IPSK_vinfo, TT.getObjectFormat()));
+  maybeSetComdat(VPInfo, Fn, CntsVarName);
+  ValueProfileVars.push_back(VPInfo);
+  PD.VPInfo = VPInfo;
 }
 
 void InstrLowerer::emitVNodes() {
@@ -2515,10 +2577,13 @@ void InstrLowerer::emitUses() {
   // and ensure this GC property as well. Otherwise, we have to conservatively
   // make all of the sections retained by the linker.
   if (TT.isOSBinFormatELF() || TT.isOSBinFormatMachO() ||
-      (TT.isOSBinFormatCOFF() && !DataReferencedByCode))
+      (TT.isOSBinFormatCOFF() && !DataReferencedByCode)) {
     appendToCompilerUsed(M, CompilerUsedVars);
-  else
+    appendToCompilerUsed(M, ValueProfileVars);
+  } else {
     appendToUsed(M, CompilerUsedVars);
+    appendToUsed(M, ValueProfileVars);
+  }
 
   // We do not add proper references from used metadata sections to NamesVar and
   // VNodesVar, so we have to be conservative and place them in llvm.used

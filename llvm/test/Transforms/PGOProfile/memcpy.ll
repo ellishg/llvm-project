@@ -22,7 +22,7 @@ for.cond1:
 
 for.body3:
   %conv = sext i32 %add to i64
-; CHECK: call void @__llvm_profile_instrument_memop(i64 %conv, ptr @__profd_foo, i32 0)
+; CHECK: call void @__llvm_profile_instrument_memop(i64 %conv, ptr @__profvinfo_foo, i32 0)
   call void @llvm.memcpy.p0.p0.i64(ptr %dst, ptr %src, i64 %conv, i1 false)
   %inc = add nsw i32 %j.0, 1
   br label %for.cond1

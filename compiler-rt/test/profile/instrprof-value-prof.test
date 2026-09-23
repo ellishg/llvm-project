@@ -12,6 +12,14 @@
 // RUN: llvm-profdata merge -text  %t.ir.profdata -o %t.ir.proftxt 
 // RUN: FileCheck  %S/Inputs/instrprof-value-prof-real.c --check-prefix=IR < %t.ir.proftxt
 
+// TODO: Linux only
+// RUN: %clang_pgogen -O2 -g -mllvm -profile-correlate=debug-info -mllvm -disable-vp=false -mllvm -vp-static-alloc=true -mllvm -vp-counters-per-site=256 -o %t.ir-dbg  %S/Inputs/instrprof-value-prof-real.c
+// RUN: env LLVM_PROFILE_FILE=%t.ir-dbg.profraw LLVM_VP_MAX_NUM_VALS_PER_SITE=255 %run %t.ir-dbg
+// RUN: llvm-profdata merge -o %t.ir-dbg.profdata %t.ir-dbg.profraw --debug-info=%t.ir-dbg
+// RUN: llvm-profdata show --all-functions -ic-targets  %t.ir-dbg.profdata | FileCheck  %S/Inputs/instrprof-value-prof-real.c
+// RUN: llvm-profdata merge -text  %t.ir-dbg.profdata -o %t.ir-dbg.proftxt
+// RUN: FileCheck  %S/Inputs/instrprof-value-prof-real.c --check-prefix=IR < %t.ir-dbg.proftxt
+
 // IR level instrumentation with dynamic memory allocation
 // RUN: %clang_pgogen -O2 -mllvm -disable-vp=false -mllvm -vp-static-alloc=false -mllvm -vp-counters-per-site=256 -o %t.ir.dyn  %S/Inputs/instrprof-value-prof-real.c
 // RUN: env LLVM_PROFILE_FILE=%t.ir.dyn.profraw %run %t.ir.dyn
@@ -19,4 +27,3 @@
 // RUN: llvm-profdata show --all-functions -ic-targets  %t.ir.dyn.profdata | FileCheck  %S/Inputs/instrprof-value-prof-real.c
 // RUN: llvm-profdata merge -text  %t.ir.dyn.profdata -o %t.ir.dyn.proftxt 
 // RUN: FileCheck  %S/Inputs/instrprof-value-prof-real.c --check-prefix=IR < %t.ir.dyn.proftxt
-

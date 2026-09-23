@@ -138,6 +138,10 @@ COMPILER_RT_VISIBILITY
 char *__llvm_profile_begin_bitmap(void) { return BitmapFirst; }
 COMPILER_RT_VISIBILITY
 char *__llvm_profile_end_bitmap(void) { return BitmapLast; }
+COMPILER_RT_VISIBILITY
+ValueProfInfo *__llvm_profile_begin_vpinfo(void) { return NULL; }
+COMPILER_RT_VISIBILITY
+ValueProfInfo *__llvm_profile_end_vpinfo(void) { return NULL; }
 
 COMPILER_RT_VISIBILITY
 ValueProfNode *__llvm_profile_begin_vnodes(void) {

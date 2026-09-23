@@ -87,11 +87,14 @@ INSTR_PROF_DATA(const IntPtrT, IntPtrTy, BitmapPtr, RelativeBitmapPtr)
  */
 INSTR_PROF_DATA(const IntPtrT, llvm::PointerType::getUnqual(Ctx), FunctionPointer, \
                 FunctionAddr)
-INSTR_PROF_DATA(IntPtrT, llvm::PointerType::getUnqual(Ctx), Values, \
-                ValuesPtrExpr)
+/* The address difference between the corresponding ValueProfInfo and this
+ * profile data record. */
+INSTR_PROF_DATA(const IntPtrT, IntPtrTy, RelativeValuesPtr, \
+                RelativeValuesPtr)
 INSTR_PROF_DATA(const uint32_t, llvm::Type::getInt32Ty(Ctx), NumCounters, \
                 ConstantInt::get(llvm::Type::getInt32Ty(Ctx), NumCounters))
-INSTR_PROF_DATA(const uint16_t, Int16ArrayTy, NumValueSites[IPVK_Last+1], \
+/* TODO: Remove field */
+INSTR_PROF_DATA(const uint16_t, Int16ArrayTy, NumValueSitesDEPRECATED[IPVK_Last+1], \
                 ConstantArray::get(Int16ArrayTy, Int16ArrayVals)) \
 INSTR_PROF_DATA(const uint16_t, llvm::Type::getInt16Ty(Ctx), \
                 OffloadDeviceWaveSize, \
@@ -186,6 +189,26 @@ INSTR_PROF_GPU_SECT(uint64_t *, llvm::PointerType::getUnqual(Ctx),             \
 #undef INSTR_PROF_GPU_SECT
 /* INSTR_PROF_GPU_SECT end. */
 
+/* INSTR_PROF_VALUE_INFO start. */
+/*
+ * typedef struct ValueProfInfo {
+ *   ValueProfNode **Values;
+ *   const uint16_t NumValueSites[IPVK_Last + 1];
+ * } ValueProfInfo;
+ */
+#ifndef INSTR_PROF_VALUE_INFO
+#define INSTR_PROF_VALUE_INFO(Type, LLVMType, Name, Initializer)
+#else
+#define INSTR_PROF_DATA_DEFINED
+#endif
+INSTR_PROF_VALUE_INFO(ValueProfNode **, llvm::PointerType::getUnqual(Ctx), \
+                      Values, ValuesPtr)
+INSTR_PROF_VALUE_INFO(const uint16_t, NumValueSitesTy, \
+                      NumValueSites[IPVK_Last + 1], \
+                      ConstantArray::get(NumValueSitesTy, NumValueSitesVals))
+#undef INSTR_PROF_VALUE_INFO
+/* INSTR_PROF_VALUE_INFO end. */
+
 /* INSTR_PROF_RAW_HEADER  start */
 /* Definition of member fields of the raw profile header data structure. */
 /* Please update llvm/docs/InstrProfileFormat.md as appropriate when updating
@@ -215,7 +238,7 @@ INSTR_PROF_RAW_HEADER(uint64_t, CountersDelta,
                       (uintptr_t)CountersBegin - (uintptr_t)DataBegin)
 INSTR_PROF_RAW_HEADER(uint64_t, BitmapDelta,
                       (uintptr_t)BitmapBegin - (uintptr_t)DataBegin)
-INSTR_PROF_RAW_HEADER(uint64_t, NamesDelta, (uintptr_t)NamesBegin)
+INSTR_PROF_RAW_HEADER(uint64_t, ValueInfoDelta, ValueInfoDelta)
 INSTR_PROF_RAW_HEADER(uint64_t, NumVTables, NumVTables)
 INSTR_PROF_RAW_HEADER(uint64_t, VNamesSize, VNamesSize)
 INSTR_PROF_RAW_HEADER(uint64_t, ValueKindLast, IPVK_Last)
@@ -235,7 +258,7 @@ INSTR_PROF_RAW_HEADER(uint64_t, ValueKindLast, IPVK_Last)
 #endif
 VALUE_PROF_FUNC_PARAM(uint64_t, TargetValue, Type::getInt64Ty(Ctx)) \
                       INSTR_PROF_COMMA
-VALUE_PROF_FUNC_PARAM(void *, Data, PointerType::getUnqual(Ctx)) INSTR_PROF_COMMA
+VALUE_PROF_FUNC_PARAM(ValueProfInfo *, VPInfo, PointerType::getUnqual(Ctx)) INSTR_PROF_COMMA
 VALUE_PROF_FUNC_PARAM(uint32_t, CounterIndex, Type::getInt32Ty(Ctx))
 #undef VALUE_PROF_FUNC_PARAM
 #undef INSTR_PROF_COMMA
@@ -389,6 +412,9 @@ INSTR_PROF_SECT_ENTRY(IPSK_vname, \
 INSTR_PROF_SECT_ENTRY(IPSK_vals, \
                       INSTR_PROF_QUOTE(INSTR_PROF_VALS_COMMON), \
                       INSTR_PROF_VALS_COFF, "__DATA,")
+INSTR_PROF_SECT_ENTRY(IPSK_vinfo, \
+                      INSTR_PROF_QUOTE(INSTR_PROF_VINFO_COMMON), \
+                      INSTR_PROF_VINFO_COFF, "__DATA,")
 INSTR_PROF_SECT_ENTRY(IPSK_vnodes, \
                       INSTR_PROF_QUOTE(INSTR_PROF_VNODES_COMMON), \
                       INSTR_PROF_VNODES_COFF, "__DATA,")
@@ -773,7 +799,7 @@ serializeValueProfDataFrom(ValueProfRecordClosure *Closure,
         (uint64_t)'f' << 16 | (uint64_t)'R' << 8 | (uint64_t)129
 
 /* Raw profile format version (start from 1). */
-#define INSTR_PROF_RAW_VERSION 11
+#define INSTR_PROF_RAW_VERSION 12
 /* Indexed profile format version (start from 1). */
 #define INSTR_PROF_INDEX_VERSION 14
 /* Coverage mapping format version (start from 0). */
@@ -827,6 +853,7 @@ serializeValueProfDataFrom(ValueProfRecordClosure *Closure,
 #define INSTR_PROF_UCNTS_COMMON __llvm_prf_ucnts
 #define INSTR_PROF_BITS_COMMON __llvm_prf_bits
 #define INSTR_PROF_VALS_COMMON __llvm_prf_vals
+#define INSTR_PROF_VINFO_COMMON __llvm_prf_vinfo
 #define INSTR_PROF_VNODES_COMMON __llvm_prf_vnds
 #define INSTR_PROF_VTAB_COMMON __llvm_prf_vtab
 #define INSTR_PROF_COVMAP_COMMON __llvm_covmap
@@ -845,6 +872,7 @@ serializeValueProfDataFrom(ValueProfRecordClosure *Closure,
 #define INSTR_PROF_UCNTS_COFF ".lprfuc$M"
 #define INSTR_PROF_BITS_COFF ".lprfb$M"
 #define INSTR_PROF_VALS_COFF ".lprfv$M"
+#define INSTR_PROF_VINFO_COFF ".lprfi$M"
 #define INSTR_PROF_VNODES_COFF ".lprfnd$M"
 #define INSTR_PROF_VTAB_COFF ".lprfvt$M"
 #define INSTR_PROF_COVMAP_COFF ".lcovmap$M"
@@ -871,6 +899,8 @@ serializeValueProfDataFrom(ValueProfRecordClosure *Closure,
  * of value nodes associated with one value site.
  */
 #define INSTR_PROF_VALS_SECT_NAME INSTR_PROF_VALS_COFF
+/* Per-function value profile descriptor section. */
+#define INSTR_PROF_VINFO_SECT_NAME INSTR_PROF_VINFO_COFF
 /* Value profile nodes section. */
 #define INSTR_PROF_VNODES_SECT_NAME INSTR_PROF_VNODES_COFF
 #define INSTR_PROF_COVMAP_SECT_NAME INSTR_PROF_COVMAP_COFF
@@ -890,6 +920,8 @@ serializeValueProfDataFrom(ValueProfRecordClosure *Closure,
  * of value nodes associated with one value site.
  */
 #define INSTR_PROF_VALS_SECT_NAME INSTR_PROF_QUOTE(INSTR_PROF_VALS_COMMON)
+/* Per-function value profile descriptor section. */
+#define INSTR_PROF_VINFO_SECT_NAME INSTR_PROF_QUOTE(INSTR_PROF_VINFO_COMMON)
 /* Value profile nodes section. */
 #define INSTR_PROF_VNODES_SECT_NAME INSTR_PROF_QUOTE(INSTR_PROF_VNODES_COMMON)
 #define INSTR_PROF_COVMAP_SECT_NAME INSTR_PROF_QUOTE(INSTR_PROF_COVMAP_COMMON)

@@ -16,11 +16,12 @@ int __llvm_profile_write_file();
 void __llvm_profile_reset_counters(void);
 int __llvm_profile_merge_from_buffer(const char *, uint64_t);
 void __llvm_profile_set_filename(const char *);
-struct __llvm_profile_data;
 struct ValueProfData;
-void lprofMergeValueProfData(struct ValueProfData *, struct __llvm_profile_data *);
+struct ValueProfInfo;
+void lprofMergeValueProfData(struct ValueProfData *, struct ValueProfInfo *);
 /* Force the vp merger module to be linked in.  */
-void *Dummy = &lprofMergeValueProfData;
+void (*Dummy)(struct ValueProfData *,
+              struct ValueProfInfo *) = &lprofMergeValueProfData;
 
 void callee1() {}
 void callee2() {}

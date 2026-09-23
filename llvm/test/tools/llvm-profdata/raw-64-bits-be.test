@@ -5,7 +5,7 @@
 // TODO: use a builtin version of printf
 UNSUPPORTED: system-windows, system-zos
 RUN: printf '\377lprofr\201' > %t
-RUN: printf '\0\0\0\0\0\0\0\13' >> %t
+RUN: printf '\0\0\0\0\0\0\0\14' >> %t
 RUN: printf '\0\0\0\0\0\0\0\0' >> %t
 RUN: printf '\0\0\0\0\0\0\0\2' >> %t
 RUN: printf '\0\0\0\0\0\0\0\0' >> %t

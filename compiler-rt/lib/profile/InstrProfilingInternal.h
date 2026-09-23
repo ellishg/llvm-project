@@ -124,7 +124,7 @@ struct ValueProfNode;
  * data for streaming/serialization from the instrumentation runtime.
  */
 typedef struct VPDataReaderType {
-  uint32_t (*InitRTRecord)(const __llvm_profile_data *Data,
+  uint32_t (*InitRTRecord)(const ValueProfInfo *VPInfo,
                            uint8_t *SiteCountArray[]);
   /* Function pointer to getValueProfRecordHeader method. */
   uint32_t (*GetValueProfRecordHeaderSize)(uint32_t NumSites);
@@ -165,7 +165,7 @@ int lprofWriteDataImpl(
 /* Merge value profile data pointed to by SrcValueProfData into
  * in-memory profile counters pointed by to DstData.  */
 void lprofMergeValueProfData(struct ValueProfData *SrcValueProfData,
-                             __llvm_profile_data *DstData);
+                             ValueProfInfo *DstValueProfInfo);
 
 VPDataReaderType *lprofGetVPDataReader(void);
 
@@ -196,13 +196,16 @@ COMPILER_RT_VISIBILITY extern uint32_t VPMaxNumValsPerSite;
 /* Pointer to the start of static value counters to be allocted. */
 COMPILER_RT_VISIBILITY extern ValueProfNode *CurrentVNode;
 COMPILER_RT_VISIBILITY extern ValueProfNode *EndVNode;
-extern void (*VPMergeHook)(struct ValueProfData *, __llvm_profile_data *);
+extern void (*VPMergeHook)(struct ValueProfData *, ValueProfInfo *);
 
 /*
  * Write binary ids into profiles if writer is given.
  * Return -1 if an error occurs, otherwise, return total size of binary ids.
  */
 int __llvm_write_binary_ids(ProfDataWriter *Writer);
+
+/* Return the load bias for the current image, or zero if unavailable. */
+uintptr_t lprofGetLoadBias(void);
 
 /*
  * Write binary id length and then its data, because binary id does not

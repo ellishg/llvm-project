@@ -16,6 +16,7 @@
 // Test llvm-profdata merge profile correlation with --debuginfod option.
 // RUN: mkdir -p %t/buildid/12345678
 // RUN: cp %t.correlate.exe %t/buildid/12345678/debuginfo
+// RUN: rm -rf %t/debuginfod-cache
 // RUN: mkdir -p %t/debuginfod-cache
 // RUN: env DEBUGINFOD_CACHE_PATH=%t/debuginfod-cache DEBUGINFOD_URLS=file://%t llvm-profdata merge -o %t.correlate-debuginfod.profdata --debuginfod --correlate=binary %t.correlate.profraw
 // RUN: llvm-profdata show --all-functions --counts %t.correlate-debuginfod.profdata > %t.correlate-debuginfod.profdata.show

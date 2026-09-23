@@ -97,11 +97,11 @@ define available_externally void @foo_extern() {
 
 declare void @llvm.instrprof.increment(ptr, i64, i32, i32)
 
-; ELF:         @llvm.compiler.used = appending global {{.*}} [{{.*}}ptr @__profd_foo, ptr @__profd_foo_weak, ptr @"__profd_linkage.ll:foo_internal", ptr @__profd_foo_inline, ptr @__profd_foo_extern{{.*}}]
-; MACHO:       @llvm.compiler.used = appending global [6 x ptr] [ptr @__llvm_profile_runtime_user, ptr @__profd_foo, {{.*}}
-; COFF:        @llvm.compiler.used = appending global [6 x ptr] [ptr @__llvm_profile_runtime_user, ptr @__profd_foo, ptr @__profd_foo_weak, ptr @"__profd_linkage.ll:foo_internal", ptr @__profd_foo_inline, ptr @__profd_foo_extern]
-; XCOFF:       @llvm.used = appending global [6 x ptr] [ptr @__profd_foo, ptr @__profd_foo_weak, ptr @"__profd_linkage.ll:foo_internal", ptr @__profd_foo_inline, ptr @__profd_foo_extern, ptr @__llvm_prf_nm]
-; WASM:        @llvm.used = appending global [7 x ptr] [ptr @__llvm_profile_runtime_user, ptr @__profd_foo, ptr @__profd_foo_weak, ptr @"__profd_linkage.ll:foo_internal", ptr @__profd_foo_inline, ptr @__profd_foo_extern, ptr @__llvm_prf_nm]
+; ELF:         @llvm.compiler.used = appending global {{.*}} [{{.*}}ptr @__profd_foo, ptr @__profd_foo_weak, ptr @"__profd_linkage.ll:foo_internal", ptr @__profd_foo_inline, ptr @__profd_foo_extern, {{.*}}ptr @__profvinfo_foo, ptr @__profvinfo_foo_weak, ptr @"__profvinfo_linkage.ll:foo_internal", ptr @__profvinfo_foo_inline, ptr @__profvinfo_foo_extern]
+; MACHO:       @llvm.compiler.used = appending global [11 x ptr] [ptr @__llvm_profile_runtime_user, ptr @__profd_foo, ptr @__profd_foo_weak, ptr @"__profd_linkage.ll:foo_internal", ptr @__profd_foo_inline, ptr @__profd_foo_extern, ptr @__profvinfo_foo, ptr @__profvinfo_foo_weak, ptr @"__profvinfo_linkage.ll:foo_internal", ptr @__profvinfo_foo_inline, ptr @__profvinfo_foo_extern]
+; COFF:        @llvm.compiler.used = appending global [11 x ptr] [ptr @__llvm_profile_runtime_user, ptr @__profd_foo, ptr @__profd_foo_weak, ptr @"__profd_linkage.ll:foo_internal", ptr @__profd_foo_inline, ptr @__profd_foo_extern, ptr @__profvinfo_foo, ptr @__profvinfo_foo_weak, ptr @"__profvinfo_linkage.ll:foo_internal", ptr @__profvinfo_foo_inline, ptr @__profvinfo_foo_extern]
+; XCOFF:       @llvm.used = appending global [11 x ptr] [ptr @__profd_foo, ptr @__profd_foo_weak, ptr @"__profd_linkage.ll:foo_internal", ptr @__profd_foo_inline, ptr @__profd_foo_extern, ptr @__profvinfo_foo, ptr @__profvinfo_foo_weak, ptr @"__profvinfo_linkage.ll:foo_internal", ptr @__profvinfo_foo_inline, ptr @__profvinfo_foo_extern, ptr @__llvm_prf_nm]
+; WASM:        @llvm.used = appending global [12 x ptr] [ptr @__llvm_profile_runtime_user, ptr @__profd_foo, ptr @__profd_foo_weak, ptr @"__profd_linkage.ll:foo_internal", ptr @__profd_foo_inline, ptr @__profd_foo_extern, ptr @__profvinfo_foo, ptr @__profvinfo_foo_weak, ptr @"__profvinfo_linkage.ll:foo_internal", ptr @__profvinfo_foo_inline, ptr @__profvinfo_foo_extern, ptr @__llvm_prf_nm]
 
 ; MACHO: define linkonce_odr hidden i32 @__llvm_profile_runtime_user() {{.*}} {
 ; MACHO:   %[[REG:.*]] = load i32, ptr @__llvm_profile_runtime

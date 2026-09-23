@@ -78,9 +78,14 @@ declare void @llvm.instrprof.mcdc.tvbitmap.update(ptr, i64, i32, ptr)
 ; CHECK-DWARF:         DW_AT_name	("Num Counters")
 ; CHECK-DWARF:         DW_AT_const_value	(2)
 ; CHECK-DWARF:       NULL
+; CHECK-DWARF:     DW_TAG_variable
+; CHECK-DWARF:       DW_AT_name	("__profvinfo_foo")
+; CHECK-DWARF:       DW_AT_type	({{.*}} "Value Profile Data Type")
 ; CHECK-DWARF:     NULL
 ; CHECK-DWARF:   DW_TAG_unspecified_type
 ; CHECK-DWARF:     DW_AT_name	("Profile Bitmap Type")
 ; CHECK-DWARF:   DW_TAG_unspecified_type
 ; CHECK-DWARF:     DW_AT_name	("Profile Data Type")
+; CHECK-DWARF:   DW_TAG_unspecified_type
+; CHECK-DWARF:     DW_AT_name	("Value Profile Data Type")
 ; CHECK-DWARF:   NULL

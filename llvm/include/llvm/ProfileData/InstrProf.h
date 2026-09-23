@@ -145,6 +145,9 @@ inline StringRef getInstrProfBitmapVarPrefix() { return "__profbm_"; }
 /// Return the name prefix of value profile variables.
 inline StringRef getInstrProfValuesVarPrefix() { return "__profvp_"; }
 
+/// Return the name prefix of value profile info variables.
+inline StringRef getInstrProfValueInfoVarPrefix() { return "__profvinfo_"; }
+
 /// Return the name of value profile node array variables:
 inline StringRef getInstrProfVNodesVarName() { return "__llvm_prf_vnodes"; }
 

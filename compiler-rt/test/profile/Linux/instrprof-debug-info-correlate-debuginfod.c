@@ -2,12 +2,12 @@
 // RUN: rm -rf %t
 
 // Default instrumented build with no profile correlation.
-// RUN: %clang_pgogen -o %t.default -Wl,--build-id=0x12345678 -mllvm --disable-vp=true %S/../Inputs/instrprof-debug-info-correlate-main.cpp %S/../Inputs/instrprof-debug-info-correlate-foo.cpp
+// RUN: %clang_pgogen -o %t.default -Wl,--build-id=0x12345678 %S/../Inputs/instrprof-debug-info-correlate-main.cpp %S/../Inputs/instrprof-debug-info-correlate-foo.cpp
 // RUN: env LLVM_PROFILE_FILE=%t.profraw %run %t.default
 // RUN: llvm-profdata merge -o %t.default.profdata %t.profraw
 
 // Build with profile debuginfo correlation.
-// RUN: %clang_pgogen -o %t.correlate.exe -Wl,--build-id=0x12345678 -g -gdwarf-4 -mllvm --profile-correlate=debug-info -mllvm --disable-vp=true %S/../Inputs/instrprof-debug-info-correlate-main.cpp %S/../Inputs/instrprof-debug-info-correlate-foo.cpp
+// RUN: %clang_pgogen -o %t.correlate.exe -Wl,--build-id=0x12345678 -g -gdwarf-4 -mllvm --profile-correlate=debug-info %S/../Inputs/instrprof-debug-info-correlate-main.cpp %S/../Inputs/instrprof-debug-info-correlate-foo.cpp
 // RUN: env LLVM_PROFILE_FILE=%t.debug-info-correlate.proflite %run %t.correlate.exe
 
 // Test llvm-profdata merge profile correlation with --debuginfod option.

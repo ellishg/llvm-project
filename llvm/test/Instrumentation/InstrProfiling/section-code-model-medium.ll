@@ -29,6 +29,9 @@ attributes #0 = { nounwind }
 ; CHECK: @__profvp_foo =
 ; X8664-SAME: code_model "large"
 ; PPC-NOT: code_model "large"
+; CHECK: @__profvinfo_foo =
+; X8664-SAME: code_model "large"
+; PPC-NOT: code_model "large"
 ; CHECK: @__profd_foo =
 ; CHECK-NOT: code_model "large"
 ; CHECK: @__llvm_prf_vnodes =

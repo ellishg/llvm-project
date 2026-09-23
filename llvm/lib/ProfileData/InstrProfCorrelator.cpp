@@ -18,11 +18,16 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/WithColor.h"
+#include <limits>
 #include <optional>
 
 #define DEBUG_TYPE "correlator"
 
 using namespace llvm;
+
+static uint64_t getValueProfInfoSize(uint64_t PointerSize) {
+  return alignTo(PointerSize + sizeof(uint16_t) * (IPVK_Last + 1), PointerSize);
+}
 
 /// Get profile section.
 static Expected<object::SectionRef>
@@ -103,6 +108,14 @@ InstrProfCorrelator::Context::get(std::unique_ptr<MemoryBuffer> Buffer,
   C->CountersSectionStart = CountersSection->getAddress();
   C->CountersSectionEnd = C->CountersSectionStart + CountersSection->getSize();
 
+  auto VInfoSection = getInstrProfSection(Obj, IPSK_vinfo);
+  if (auto E = VInfoSection.takeError()) {
+    consumeError(std::move(E));
+  } else {
+    C->VInfoSectionStart = VInfoSection->getAddress();
+    C->VInfoSectionEnd = *C->VInfoSectionStart + VInfoSection->getSize();
+  }
+
   auto BitmapSection = getInstrProfSection(Obj, IPSK_bitmap);
   if (auto E = BitmapSection.takeError()) {
     // It is not an error if NumBitmapBytes of each function is zero.
@@ -119,6 +132,16 @@ InstrProfCorrelator::Context::get(std::unique_ptr<MemoryBuffer> Buffer,
     ++C->CountersSectionStart;
     if (C->BitmapSectionStart)
       ++C->BitmapSectionStart;
+    if (C->VInfoSectionStart && C->VInfoSectionEnd) {
+      uint64_t VInfoSize = getValueProfInfoSize(Obj.getBytesInAddress());
+      uint64_t SectionSize = *C->VInfoSectionEnd - *C->VInfoSectionStart;
+      if (SectionSize < 2 * VInfoSize || SectionSize % VInfoSize)
+        return make_error<InstrProfError>(
+            instrprof_error::unable_to_correlate_profile,
+            "invalid value profile info section");
+      *C->VInfoSectionStart += VInfoSize;
+      *C->VInfoSectionEnd -= VInfoSize;
+    }
   }
 
   C->ShouldSwapBytes = Obj.isLittleEndian() != sys::IsLittleEndianHost;
@@ -221,6 +244,14 @@ std::optional<size_t> InstrProfCorrelator::getDataSize() const {
   return {};
 }
 
+uint64_t InstrProfCorrelator::getNumValueProfData() const {
+  if (!Ctx->VInfoSectionStart || !Ctx->VInfoSectionEnd)
+    return 0;
+  uint64_t PointerSize = Kind == CK_64Bit ? sizeof(uint64_t) : sizeof(uint32_t);
+  return (*Ctx->VInfoSectionEnd - *Ctx->VInfoSectionStart) /
+         getValueProfInfoSize(PointerSize);
+}
+
 namespace llvm {
 
 template <>
@@ -295,6 +326,7 @@ template <> struct yaml::MappingTraits<InstrProfCorrelator::Probe> {
     io.mapRequired("CFG Hash", P.CFGHash);
     io.mapRequired("Counter Offset", P.CounterOffset);
     io.mapRequired("Num Counters", P.NumCounters);
+    io.mapOptional("VPInfo Offset", P.VPInfoOffset);
     io.mapRequired("Bitmap Offset", P.BitmapOffset);
     io.mapRequired("Num BitmapBytes", P.NumBitmapBytes);
     io.mapOptional("File", P.FilePath);
@@ -324,7 +356,7 @@ template <class IntPtrT>
 void InstrProfCorrelatorImpl<IntPtrT>::addDataProbe(
     uint64_t NameRef, uint64_t CFGHash, IntPtrT CounterOffset,
     IntPtrT BitmapOffset, IntPtrT FunctionPtr, uint32_t NumCounters,
-    uint32_t NumBitmapBytes) {
+    IntPtrT VPInfoOffset, uint32_t NumBitmapBytes) {
   // Check if a probe was already added for this counter offset.
   if (NumCounters && !CounterOffsets.insert(CounterOffset).second)
     return;
@@ -340,8 +372,7 @@ void InstrProfCorrelatorImpl<IntPtrT>::addDataProbe(
       /*UniformCounterPtr=*/maybeSwap<IntPtrT>(0),
       maybeSwap<IntPtrT>(BitmapOffset),
       maybeSwap<IntPtrT>(FunctionPtr),
-      // TODO: Value profiling is not yet supported.
-      /*ValuesPtr=*/maybeSwap<IntPtrT>(0),
+      maybeSwap<IntPtrT>(VPInfoOffset),
       maybeSwap<uint32_t>(NumCounters),
       /*NumValueSites=*/{maybeSwap<uint16_t>(0), maybeSwap<uint16_t>(0)},
       /*OffloadDeviceWaveSize=*/maybeSwap<uint16_t>(0),
@@ -393,13 +424,44 @@ bool DwarfInstrProfCorrelator<IntPtrT>::isDIEOfProbe(const DWARFDie &Die,
 }
 
 template <class IntPtrT>
+std::optional<IntPtrT>
+DwarfInstrProfCorrelator<IntPtrT>::getVPInfoOffset(const DWARFDie &FnDie,
+                                                   const bool UnlimitedWarnings,
+                                                   int &NumSuppressedWarnings) {
+  auto DieIt = llvm::find_if(FnDie.children(), [](const auto &Die) {
+    const char *Name = Die.getName(DINameKind::ShortName);
+    return Name &&
+           StringRef(Name).starts_with(getInstrProfValueInfoVarPrefix());
+  });
+  if (DieIt == FnDie.children().end())
+    return std::nullopt;
+  auto VPInfoPtr = getLocation(*DieIt);
+  if (!VPInfoPtr)
+    return std::nullopt;
+  if (!this->Ctx->VInfoSectionStart || !this->Ctx->VInfoSectionEnd)
+    return std::nullopt;
+  uint64_t VInfoStart = *this->Ctx->VInfoSectionStart;
+  uint64_t VInfoEnd = *this->Ctx->VInfoSectionEnd;
+  if (*VPInfoPtr < VInfoStart || *VPInfoPtr >= VInfoEnd) {
+    if (UnlimitedWarnings || ++NumSuppressedWarnings < 1) {
+      WithColor::warning() << format("VPInfoPtr out of range: Actual=0x%x "
+                                     "Expected=[0x%x, 0x%x)\n",
+                                     *VPInfoPtr, VInfoStart, VInfoEnd);
+      LLVM_DEBUG(DieIt->dump(dbgs()));
+    }
+    return std::nullopt;
+  }
+  return *VPInfoPtr - VInfoStart;
+}
+
+template <class IntPtrT>
 std::optional<std::pair<InstrProfCorrelator::Probe, IntPtrT>>
 DwarfInstrProfCorrelator<IntPtrT>::addCountersToDataProbe(
     const DWARFDie &Die, const bool UnlimitedWarnings,
     int &NumSuppressedWarnings) {
   std::optional<const char *> FunctionName;
   std::optional<uint64_t> CFGHash;
-  std::optional<uint64_t> CounterPtr = getLocation(Die);
+  std::optional<IntPtrT> CounterPtr = getLocation(Die);
   auto FnDie = Die.getParent();
   auto FunctionPtr = dwarf::toAddress(FnDie.find(dwarf::DW_AT_low_pc));
   std::optional<uint64_t> NumCounters;
@@ -467,6 +529,8 @@ DwarfInstrProfCorrelator<IntPtrT>::addCountersToDataProbe(
   P.CFGHash = *CFGHash;
   P.CounterOffset = CounterOffset;
   P.NumCounters = *NumCounters;
+  P.VPInfoOffset =
+      getVPInfoOffset(FnDie, UnlimitedWarnings, NumSuppressedWarnings);
   auto FilePath = FnDie.getDeclFile(
       DILineInfoSpecifier::FileLineInfoKind::RelativeFilePath);
   if (!FilePath.empty())
@@ -579,6 +643,7 @@ void DwarfInstrProfCorrelator<IntPtrT>::correlateProfileDataImpl(
         P.LinkageName = Probe.LinkageName;
         P.CFGHash = Probe.CFGHash;
         P.CounterOffset = Probe.CounterOffset;
+        P.VPInfoOffset = Probe.VPInfoOffset;
         P.NumCounters = Probe.NumCounters;
         P.FilePath = Probe.FilePath;
         P.LineNumber = Probe.LineNumber;
@@ -602,9 +667,11 @@ void DwarfInstrProfCorrelator<IntPtrT>::correlateProfileDataImpl(
     else {
       this->NamesVec.push_back(FunctionName);
       uint64_t NameRef = IndexedInstrProf::ComputeHash(FunctionName);
-      this->addDataProbe(NameRef, Probe.CFGHash, Probe.CounterOffset,
-                         Probe.BitmapOffset, FunctionPtr, Probe.NumCounters,
-                         Probe.NumBitmapBytes);
+      this->addDataProbe(
+          NameRef, Probe.CFGHash, Probe.CounterOffset, Probe.BitmapOffset,
+          FunctionPtr, Probe.NumCounters,
+          Probe.VPInfoOffset.value_or(std::numeric_limits<IntPtrT>::max()),
+          Probe.NumBitmapBytes);
     }
   }
   if (!UnlimitedWarnings && NumSuppressedWarnings > 0)
@@ -688,8 +755,11 @@ void BinaryInstrProfCorrelator<IntPtrT>::correlateProfileDataImpl(
     // addresses, but they're expected to be relative later when iterating Data.
     IntPtrT CounterOffset = CounterPtr - CountersStart;
     IntPtrT BitmapOffset = BitmapPtr - BitmapStart;
+
     this->addDataProbe(I->NameRef, I->FuncHash, CounterOffset, BitmapOffset,
-                       I->FunctionPointer, I->NumCounters, I->NumBitmapBytes);
+                       I->FunctionPointer, I->NumCounters,
+                       /*VPInfoOffset=*/std::numeric_limits<IntPtrT>::max(),
+                       I->NumBitmapBytes);
   }
 }
 

@@ -49,7 +49,7 @@ target triple = "x86_64-unknown-linux-gnu"
 @llvm.compiler.used = appending global [1 x ptr] [ptr @_ZTV5Base1], section "llvm.metadata"
 
 ; GEN: __llvm_profile_raw_version = comdat any
-; GEN: __llvm_profile_raw_version = hidden constant i64 72057594037927947, comdat
+; GEN: __llvm_profile_raw_version = hidden constant i64 72057594037927948, comdat
 ; GEN: __profn__Z4funci = private constant [8 x i8] c"_Z4funci"
 
 ; LOWER: $__profvt__ZTV7Derived = comdat nodeduplicate
@@ -67,14 +67,14 @@ entry:
 ; GEN: [[P1:%[0-9]+]] = ptrtoint ptr %vtable to i64
 ; GEN: call void @llvm.instrprof.value.profile(ptr @__profn__Z4funci, i64 [[CFGHash:[0-9]+]], i64 [[P1]], i32 2, i32 0)
 ; LOWER: [[P1:%[0-9]+]] = ptrtoint ptr %vtable to i64
-; LOWER: call void @__llvm_profile_instrument_target(i64 [[P1]], ptr @__profd__Z4funci, i32 2)
+; LOWER: call void @__llvm_profile_instrument_target(i64 [[P1]], ptr @__profvinfo__Z4funci, i32 2)
   %vfunc1 = load ptr, ptr %vtable
   %call1 = call i32 %vfunc1(ptr %add.ptr, i32 %a)
   %vtable2 = load ptr, ptr %call
 ; GEN: [[P2:%[0-9]+]] = ptrtoint ptr %vtable2 to i64
 ; GEN: call void @llvm.instrprof.value.profile(ptr @__profn__Z4funci, i64 [[CFGHash]], i64 [[P2]], i32 2, i32 1)
 ; LOWER: [[P2:%[0-9]+]] = ptrtoint ptr %vtable2 to i64
-; LOWER: call void @__llvm_profile_instrument_target(i64 [[P2]], ptr @__profd__Z4funci, i32 3)
+; LOWER: call void @__llvm_profile_instrument_target(i64 [[P2]], ptr @__profvinfo__Z4funci, i32 3)
   %vfunc2 = load ptr, ptr %vtable2
   %call4 = call i32 %vfunc2(ptr %call, i32 %a)
   %add = add nsw i32 %call1, %call4

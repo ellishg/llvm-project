@@ -347,7 +347,7 @@ private:
   uint64_t CountersDelta;
   uint64_t BitmapDelta;
   uint64_t UniformCountersDelta;
-  uint64_t NamesDelta;
+  uint64_t ValueInfoDelta;
   const RawInstrProf::ProfileData<IntPtrT> *Data;
   const RawInstrProf::ProfileData<IntPtrT> *DataEnd;
   const RawInstrProf::VTableProfileData<IntPtrT> *VTableBegin = nullptr;
@@ -362,11 +362,10 @@ private:
   const char *NamesEnd;
   const char *VNamesStart = nullptr;
   const char *VNamesEnd = nullptr;
-  // After value profile is all read, this pointer points to
-  // the header of next profile data (if exists)
   const uint8_t *ValueDataStart;
+  const uint8_t *NextValueData;
+  std::vector<const uint8_t *> ValueDataRecords;
   uint32_t ValueKindLast;
-  uint32_t CurValueDataSize;
   std::vector<llvm::object::BuildID> BinaryIds;
 
   std::function<void(Error)> Warn;
@@ -445,7 +444,7 @@ public:
 
 private:
   Error createSymtab(InstrProfSymtab &Symtab);
-  Error readNextHeader(const char *CurrentPos);
+  Error readNextHeader(const uint8_t *CurrentPos);
   Error readHeader(const RawInstrProf::Header &Header);
 
   template <class IntT> IntT swap(IntT Int) const {
@@ -474,25 +473,17 @@ private:
   bool atEnd() const { return Data == DataEnd; }
 
   void advanceData() {
-    // `CountersDelta` and `BitmapDelta` are constant zero when using debug info
-    // correlation.
+    // Section deltas are zero when using debug info correlation.
     if (!Correlator && !BIDFetcherCorrelator) {
-      // The initial CountersDelta is the in-memory address difference between
-      // the data and counts sections:
-      // start(__llvm_prf_cnts) - start(__llvm_prf_data)
-      // As we advance to the next record, we maintain the correct CountersDelta
-      // with respect to the next record.
+      // Each initial delta is the in-memory address difference between a
+      // profile section and the data section. As we advance to the next data
+      // record, maintain the delta with respect to that record.
       CountersDelta -= sizeof(*Data);
       BitmapDelta -= sizeof(*Data);
       UniformCountersDelta -= sizeof(*Data);
+      ValueInfoDelta -= sizeof(*Data);
     }
     Data++;
-    ValueDataStart += CurValueDataSize;
-  }
-
-  const char *getNextHeaderPos() const {
-      assert(atEnd());
-      return (const char *)ValueDataStart;
   }
 
   StringRef getName(uint64_t NameRef) const {

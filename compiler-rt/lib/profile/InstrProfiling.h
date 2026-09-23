@@ -55,6 +55,21 @@ typedef struct ValueProfNode {
 #include "profile/InstrProfData.inc"
 } ValueProfNode;
 
+typedef struct ValueProfInfo {
+#define INSTR_PROF_VALUE_INFO(Type, LLVMType, Name, Initializer) Type Name;
+#include "profile/InstrProfData.inc"
+} ValueProfInfo;
+
+#ifdef __cplusplus
+static_assert(sizeof(ValueProfInfo) ==
+                  sizeof(void *) * (sizeof(void *) == 8 ? 2 : 3),
+              "unexpected ValueProfInfo size");
+#else
+_Static_assert(sizeof(ValueProfInfo) ==
+                   sizeof(void *) * (sizeof(void *) == 8 ? 2 : 3),
+               "unexpected ValueProfInfo size");
+#endif
+
 typedef struct COMPILER_RT_ALIGNAS(INSTR_PROF_DATA_ALIGNMENT) VTableProfData {
 #define INSTR_PROF_VTABLE_DATA(Type, LLVMType, Name, Initializer) Type Name;
 #include "profile/InstrProfData.inc"
@@ -131,6 +146,8 @@ char *__llvm_profile_begin_counters(void);
 char *__llvm_profile_end_counters(void);
 char *__llvm_profile_begin_bitmap(void);
 char *__llvm_profile_end_bitmap(void);
+ValueProfInfo *__llvm_profile_begin_vpinfo(void);
+ValueProfInfo *__llvm_profile_end_vpinfo(void);
 ValueProfNode *__llvm_profile_begin_vnodes(void);
 ValueProfNode *__llvm_profile_end_vnodes(void);
 const VTableProfData *__llvm_profile_begin_vtables(void);
@@ -162,7 +179,8 @@ int __llvm_profile_check_compatibility(const char *Profile,
  *
  * Records the target value for the CounterIndex if not seen before. Otherwise,
  * increments the counter associated w/ the target value.
- * void __llvm_profile_instrument_target(uint64_t TargetValue, void *Data,
+ * void __llvm_profile_instrument_target(uint64_t TargetValue,
+ *                                       ValueProfInfo *VPInfo,
  *                                       uint32_t CounterIndex);
  */
 void INSTR_PROF_VALUE_PROF_FUNC(
@@ -170,7 +188,8 @@ void INSTR_PROF_VALUE_PROF_FUNC(
 #include "profile/InstrProfData.inc"
     );
 
-void __llvm_profile_instrument_target_value(uint64_t TargetValue, void *Data,
+void __llvm_profile_instrument_target_value(uint64_t TargetValue,
+                                            ValueProfInfo *VPInfo,
                                             uint32_t CounterIndex,
                                             uint64_t CounterValue);
 

@@ -55,44 +55,12 @@ COMPILER_RT_VISIBILITY void lprofSetMaxValsPerSite(uint32_t MaxVals) {
   hasNonDefaultValsPerSite = 1;
 }
 
-/* This method is only used in value profiler mock testing.  */
-COMPILER_RT_VISIBILITY void
-__llvm_profile_set_num_value_sites(__llvm_profile_data *Data,
-                                   uint32_t ValueKind, uint16_t NumValueSites) {
-#ifdef __GNUC__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wcast-qual"
-#elif defined(__clang__)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wcast-qual"
-#endif
-  *((uint16_t *)&Data->NumValueSites[ValueKind]) = NumValueSites;
-#ifdef __GNUC__
-#pragma GCC diagnostic pop
-#elif defined(__clang__)
-#pragma clang diagnostic pop
-#endif
-}
-
-/* This method is only used in value profiler mock testing.  */
-COMPILER_RT_VISIBILITY const __llvm_profile_data *
-__llvm_profile_iterate_data(const __llvm_profile_data *Data) {
-  return Data + 1;
-}
-
-/* This method is only used in value profiler mock testing.  */
-COMPILER_RT_VISIBILITY void *
-__llvm_get_function_addr(const __llvm_profile_data *Data) {
-  return Data->FunctionPointer;
-}
-
 /* Allocate an array that holds the pointers to the linked lists of
  * value profile counter nodes. The number of element of the array
  * is the total number of value profile sites instrumented. Returns
  * 0 if allocation fails.
  */
-
-static int allocateValueProfileCounters(__llvm_profile_data *Data) {
+static int allocateValueProfileCounters(ValueProfInfo *VPInfo) {
   uint64_t NumVSites = 0;
   uint32_t VKI;
 
@@ -105,7 +73,7 @@ static int allocateValueProfileCounters(__llvm_profile_data *Data) {
     VPMaxNumValsPerSite = INSTR_PROF_MAX_NUM_VAL_PER_SITE;
 
   for (VKI = IPVK_First; VKI <= IPVK_Last; ++VKI)
-    NumVSites += Data->NumValueSites[VKI];
+    NumVSites += VPInfo->NumValueSites[VKI];
 
   // If NumVSites = 0, calloc is allowed to return a non-null pointer.
   assert(NumVSites > 0 && "NumVSites can't be zero");
@@ -113,7 +81,7 @@ static int allocateValueProfileCounters(__llvm_profile_data *Data) {
       (ValueProfNode **)calloc(NumVSites, sizeof(ValueProfNode *));
   if (!Mem)
     return 0;
-  if (!COMPILER_RT_BOOL_CMPXCHG(&Data->Values, 0, Mem)) {
+  if (!COMPILER_RT_BOOL_CMPXCHG(&VPInfo->Values, 0, Mem)) {
     free(Mem);
     return 0;
   }
@@ -147,22 +115,18 @@ static ValueProfNode *allocateOneNode(void) {
 }
 
 static COMPILER_RT_ALWAYS_INLINE void
-instrumentTargetValueImpl(uint64_t TargetValue, void *Data,
+instrumentTargetValueImpl(uint64_t TargetValue, ValueProfInfo *VPInfo,
                           uint32_t CounterIndex, uint64_t CountValue) {
-  __llvm_profile_data *PData = (__llvm_profile_data *)Data;
-  if (!PData)
-    return;
   if (!CountValue)
     return;
-  if (!PData->Values) {
-    if (!allocateValueProfileCounters(PData))
+  if (!VPInfo->Values)
+    if (!allocateValueProfileCounters(VPInfo))
       return;
-  }
+  ValueProfNode **VNodePtr = &VPInfo->Values[CounterIndex];
 
-  ValueProfNode **ValueCounters = (ValueProfNode **)PData->Values;
   ValueProfNode *PrevVNode = NULL;
   ValueProfNode *MinCountVNode = NULL;
-  ValueProfNode *CurVNode = ValueCounters[CounterIndex];
+  ValueProfNode *CurVNode = *VNodePtr;
   uint64_t MinCount = UINT64_MAX;
 
   uint8_t VDataCount = 0;
@@ -226,9 +190,8 @@ instrumentTargetValueImpl(uint64_t TargetValue, void *Data,
   CurVNode->Count += CountValue;
 
   uint32_t Success = 0;
-  if (!ValueCounters[CounterIndex])
-    Success =
-        COMPILER_RT_BOOL_CMPXCHG(&ValueCounters[CounterIndex], 0, CurVNode);
+  if (!*VNodePtr)
+    Success = COMPILER_RT_BOOL_CMPXCHG(VNodePtr, 0, CurVNode);
   else if (PrevVNode && !PrevVNode->Next)
     Success = COMPILER_RT_BOOL_CMPXCHG(&(PrevVNode->Next), 0, CurVNode);
 
@@ -239,15 +202,14 @@ instrumentTargetValueImpl(uint64_t TargetValue, void *Data,
 }
 
 COMPILER_RT_VISIBILITY void
-__llvm_profile_instrument_target(uint64_t TargetValue, void *Data,
+__llvm_profile_instrument_target(uint64_t TargetValue, ValueProfInfo *VPInfo,
                                  uint32_t CounterIndex) {
-  instrumentTargetValueImpl(TargetValue, Data, CounterIndex, 1);
+  instrumentTargetValueImpl(TargetValue, VPInfo, CounterIndex, 1);
 }
-COMPILER_RT_VISIBILITY void
-__llvm_profile_instrument_target_value(uint64_t TargetValue, void *Data,
-                                       uint32_t CounterIndex,
-                                       uint64_t CountValue) {
-  instrumentTargetValueImpl(TargetValue, Data, CounterIndex, CountValue);
+COMPILER_RT_VISIBILITY void __llvm_profile_instrument_target_value(
+    uint64_t TargetValue, ValueProfInfo *VPInfo, uint32_t CounterIndex,
+    uint64_t CountValue) {
+  instrumentTargetValueImpl(TargetValue, VPInfo, CounterIndex, CountValue);
 }
 
 /*
@@ -255,11 +217,11 @@ __llvm_profile_instrument_target_value(uint64_t TargetValue, void *Data,
  * defined in InstrProfData.inc.
  */
 COMPILER_RT_VISIBILITY void
-__llvm_profile_instrument_memop(uint64_t TargetValue, void *Data,
+__llvm_profile_instrument_memop(uint64_t TargetValue, ValueProfInfo *VPInfo,
                                 uint32_t CounterIndex) {
   // Map the target value to the representative value of its range.
   uint64_t RepValue = InstrProfGetRangeRepValue(TargetValue);
-  __llvm_profile_instrument_target(RepValue, Data, CounterIndex);
+  __llvm_profile_instrument_target(RepValue, VPInfo, CounterIndex);
 }
 
 /*
@@ -270,15 +232,15 @@ __llvm_profile_instrument_memop(uint64_t TargetValue, void *Data,
  * shared C implementation.
  */
 typedef struct ValueProfRuntimeRecord {
-  const __llvm_profile_data *Data;
-  ValueProfNode **NodesKind[IPVK_Last + 1];
+  const ValueProfInfo *VPInfo;
+  ValueProfNode *const *NodesKind[IPVK_Last + 1];
   uint8_t **SiteCountArray;
 } ValueProfRuntimeRecord;
 
 /* ValueProfRecordClosure Interface implementation. */
 
 static uint32_t getNumValueSitesRT(const void *R, uint32_t VK) {
-  return ((const ValueProfRuntimeRecord *)R)->Data->NumValueSites[VK];
+  return ((const ValueProfRuntimeRecord *)R)->VPInfo->NumValueSites[VK];
 }
 
 static uint32_t getNumValueDataRT(const void *R, uint32_t VK) {
@@ -286,7 +248,7 @@ static uint32_t getNumValueDataRT(const void *R, uint32_t VK) {
   const ValueProfRuntimeRecord *Record = (const ValueProfRuntimeRecord *)R;
   if (Record->SiteCountArray[VK] == INSTR_PROF_NULLPTR)
     return 0;
-  for (I = 0; I < Record->Data->NumValueSites[VK]; I++)
+  for (I = 0; I < Record->VPInfo->NumValueSites[VK]; I++)
     S += Record->SiteCountArray[VK][I];
   return S;
 }
@@ -306,15 +268,14 @@ static ValueProfRecordClosure RTRecordClosure = {
     INSTR_PROF_NULLPTR  /* AllocValueProfData */
 };
 
-static uint32_t
-initializeValueProfRuntimeRecord(const __llvm_profile_data *Data,
-                                 uint8_t *SiteCountArray[]) {
+static uint32_t initializeValueProfRuntimeRecord(const ValueProfInfo *VPInfo,
+                                                 uint8_t *SiteCountArray[]) {
   unsigned I, J, S = 0, NumValueKinds = 0;
-  ValueProfNode **Nodes = (ValueProfNode **)Data->Values;
-  RTRecord.Data = Data;
+  ValueProfNode *const *Nodes = VPInfo->Values;
+  RTRecord.VPInfo = VPInfo;
   RTRecord.SiteCountArray = SiteCountArray;
   for (I = 0; I <= IPVK_Last; I++) {
-    uint16_t N = Data->NumValueSites[I];
+    uint16_t N = VPInfo->NumValueSites[I];
     if (!N)
       continue;
 

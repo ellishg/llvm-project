@@ -8,11 +8,11 @@ void (*foo)(void);
 int main(void) {
 // NOEXT:  [[REG1:%[0-9]+]] = load ptr, ptr @foo, align 8
 // NOEXT-NEXT:  [[REG2:%[0-9]+]] = ptrtoint ptr [[REG1]] to i64
-// NOEXT-NEXT:  call void @__llvm_profile_instrument_target(i64 [[REG2]], ptr @__profd_main, i32 0)
+// NOEXT-NEXT:  call void @__llvm_profile_instrument_target(i64 [[REG2]], ptr @__profvinfo_main, i32 0)
 // NOEXT-NEXT:  call void [[REG1]]()
 // EXT:  [[REG1:%[0-9]+]] = load ptr, ptr @foo, align 8
 // EXT-NEXT:  [[REG2:%[0-9]+]] = ptrtoint ptr [[REG1]] to i64
-// EXT-NEXT:  call void @__llvm_profile_instrument_target(i64 [[REG2]], ptr @__profd_main, i32 zeroext 0)
+// EXT-NEXT:  call void @__llvm_profile_instrument_target(i64 [[REG2]], ptr @__profvinfo_main, i32 zeroext 0)
 // EXT-NEXT:  call void [[REG1]]()
   foo();
   return 0;

@@ -122,24 +122,25 @@ COMPILER_RT_VISIBILITY int lprofBufferIOFlush(ProfBufferIO *BufferIO) {
   return 0;
 }
 
-/* Write out value profile data for function specified with \c Data.
+/* Write out value profile data for function specified with \c VPInfo.
  * The implementation does not use the method \c serializeValueProfData
  * which depends on dynamic memory allocation. In this implementation,
  * value profile data is written out to \c BufferIO piecemeal.
  */
 static int writeOneValueProfData(ProfBufferIO *BufferIO,
                                  VPDataReaderType *VPDataReader,
-                                 const __llvm_profile_data *Data) {
-  unsigned I, NumValueKinds = 0;
+                                 const ValueProfInfo *VPInfo,
+                                 uintptr_t LoadBias) {
+  unsigned I;
   ValueProfData VPHeader;
   uint8_t *SiteCountArray[IPVK_Last + 1];
 
   for (I = 0; I <= IPVK_Last; I++) {
-    if (!Data->NumValueSites[I])
+    if (!VPInfo->NumValueSites[I]) {
       SiteCountArray[I] = 0;
-    else {
+    } else {
       uint32_t Sz =
-          VPDataReader->GetValueProfRecordHeaderSize(Data->NumValueSites[I]) -
+          VPDataReader->GetValueProfRecordHeaderSize(VPInfo->NumValueSites[I]) -
           offsetof(ValueProfRecord, SiteCountArray);
       /* Only use alloca for this small byte array to avoid excessive
        * stack growth.  */
@@ -148,14 +149,9 @@ static int writeOneValueProfData(ProfBufferIO *BufferIO,
     }
   }
 
-  /* If NumValueKinds returned is 0, there is nothing to write, report
-     success and return. This should match the raw profile reader's behavior. */
-  if (!(NumValueKinds = VPDataReader->InitRTRecord(Data, SiteCountArray)))
-    return 0;
-
   /* First write the header structure. */
+  VPHeader.NumValueKinds = VPDataReader->InitRTRecord(VPInfo, SiteCountArray);
   VPHeader.TotalSize = VPDataReader->GetValueProfDataSize();
-  VPHeader.NumValueKinds = NumValueKinds;
   if (lprofBufferIOWrite(BufferIO, (const uint8_t *)&VPHeader,
                          sizeof(ValueProfData)))
     return -1;
@@ -176,25 +172,26 @@ static int writeOneValueProfData(ProfBufferIO *BufferIO,
     uint32_t RecordHeaderSize = offsetof(ValueProfRecord, SiteCountArray);
     uint32_t SiteCountArraySize;
 
-    if (!Data->NumValueSites[I])
+    uint16_t NumValueSites = VPInfo->NumValueSites[I];
+    if (!NumValueSites)
       continue;
 
     /* Write out the record header.  */
     RecordHeader.Kind = I;
-    RecordHeader.NumValueSites = Data->NumValueSites[I];
+    RecordHeader.NumValueSites = NumValueSites;
     if (lprofBufferIOWrite(BufferIO, (const uint8_t *)&RecordHeader,
                            RecordHeaderSize))
       return -1;
 
     /* Write out the site value count array including padding space. */
     SiteCountArraySize =
-        VPDataReader->GetValueProfRecordHeaderSize(Data->NumValueSites[I]) -
+        VPDataReader->GetValueProfRecordHeaderSize(NumValueSites) -
         RecordHeaderSize;
     if (lprofBufferIOWrite(BufferIO, SiteCountArray[I], SiteCountArraySize))
       return -1;
 
     /* Write out the value profile data for each value site.  */
-    for (J = 0; J < Data->NumValueSites[I]; J++) {
+    for (J = 0; J < NumValueSites; J++) {
       uint32_t NRead, NRemain;
       ValueProfNode *NextStartNode = 0;
       NRemain = VPDataReader->GetNumValueDataForSite(I, J);
@@ -207,6 +204,9 @@ static int writeOneValueProfData(ProfBufferIO *BufferIO,
             VPDataReader->GetValueData(I, /* ValueKind */
                                        J, /* Site */
                                        &VPDataArray[0], NextStartNode, NRead);
+        if (I == IPVK_IndirectCallTarget)
+          for (uint32_t K = 0; K < NRead; ++K)
+            VPDataArray[K].Value -= LoadBias;
         if (lprofBufferIOWrite(BufferIO, (const uint8_t *)&VPDataArray[0],
                                NRead * sizeof(InstrProfValueData)))
           return -1;
@@ -220,18 +220,17 @@ static int writeOneValueProfData(ProfBufferIO *BufferIO,
 
 static int writeValueProfData(ProfDataWriter *Writer,
                               VPDataReaderType *VPDataReader,
-                              const __llvm_profile_data *DataBegin,
-                              const __llvm_profile_data *DataEnd) {
+                              uintptr_t LoadBias) {
   ProfBufferIO *BufferIO;
-  const __llvm_profile_data *DI = 0;
 
   if (!VPDataReader)
     return 0;
 
   BufferIO = lprofCreateBufferIO(Writer);
 
-  for (DI = DataBegin; DI < DataEnd; DI++) {
-    if (writeOneValueProfData(BufferIO, VPDataReader, DI))
+  for (const ValueProfInfo *VPInfo = __llvm_profile_begin_vpinfo();
+       VPInfo != __llvm_profile_end_vpinfo(); ++VPInfo) {
+    if (writeOneValueProfData(BufferIO, VPDataReader, VPInfo, LoadBias))
       return -1;
   }
 
@@ -280,6 +279,9 @@ COMPILER_RT_VISIBILITY int lprofWriteDataImpl(
   const uint64_t DataSectionSize =
       __llvm_profile_get_data_size(DataBegin, DataEnd);
   const uint64_t NumData = __llvm_profile_get_num_data(DataBegin, DataEnd);
+  const ValueProfInfo *VPInfoBegin = __llvm_profile_begin_vpinfo();
+  const uint64_t ValueInfoDelta =
+      VPInfoBegin ? (uintptr_t)VPInfoBegin - (uintptr_t)DataBegin : 0;
   const uint64_t CountersSectionSize =
       __llvm_profile_get_counters_size(CountersBegin, CountersEnd);
   const uint64_t NumCounters =
@@ -331,6 +333,7 @@ COMPILER_RT_VISIBILITY int lprofWriteDataImpl(
   Header.CountersDelta = (uint32_t)Header.CountersDelta;
   Header.BitmapDelta = (uint32_t)Header.BitmapDelta;
   Header.UniformCountersDelta = (uint32_t)Header.UniformCountersDelta;
+  Header.ValueInfoDelta = (uint32_t)Header.ValueInfoDelta;
 #endif
 
   /* Recompute UniformCountersDelta from file layout. The macro initializer
@@ -348,7 +351,7 @@ COMPILER_RT_VISIBILITY int lprofWriteDataImpl(
   if (NumData == 0 && NamesSize == 0) {
     Header.CountersDelta = 0;
     Header.BitmapDelta = 0;
-    Header.NamesDelta = 0;
+    Header.ValueInfoDelta = 0;
     Header.UniformCountersDelta = 0;
   }
 
@@ -380,13 +383,13 @@ COMPILER_RT_VISIBILITY int lprofWriteDataImpl(
   if (Writer->Write(Writer, IOVecData, sizeof(IOVecData) / sizeof(*IOVecData)))
     return -1;
 
-  /* Value profiling is not yet supported in continuous mode and profile
-   * correlation mode. */
-  if (__llvm_profile_is_continuous_mode_enabled() ||
-      (NumData == 0 && NamesSize == 0))
+  /* Value profiling is not yet supported in continuous mode. */
+  if (__llvm_profile_is_continuous_mode_enabled())
     return 0;
 
-  return writeValueProfData(Writer, VPDataReader, DataBegin, DataEnd);
+  return writeValueProfData(
+      Writer, VPDataReader,
+      Version & VARIANT_MASK_DBG_CORRELATE ? lprofGetLoadBias() : 0);
 }
 
 /*
