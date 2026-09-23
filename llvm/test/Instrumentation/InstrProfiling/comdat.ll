@@ -62,9 +62,9 @@ define void @foo_private_profn() comdat {
   ret void
 }
 
-; ELF:   @llvm.compiler.used = appending global [3 x ptr] [ptr @__profd_foo_inline, ptr @__profd_foo_extern, ptr @__profd_foo_private_profn]
-; COFF0: @llvm.compiler.used = appending global [4 x ptr] [ptr @__llvm_profile_runtime_user, ptr @__profd_foo_inline, ptr @__profd_foo_extern, ptr @__profd_foo_private_profn]
-; COFF1: @llvm.used = appending global [5 x ptr] [ptr @__llvm_profile_runtime_user, ptr @__profd_foo_inline, ptr @__profd_foo_extern, ptr @__profd_foo_private_profn, ptr @__llvm_prf_nm]
+; ELF:   @llvm.compiler.used = appending global [6 x ptr] [ptr @__profd_foo_inline, ptr @__profd_foo_extern, ptr @__profd_foo_private_profn, ptr @__profvinfo_foo_inline, ptr @__profvinfo_foo_extern, ptr @__profvinfo_foo_private_profn]
+; COFF0: @llvm.compiler.used = appending global [7 x ptr] [ptr @__llvm_profile_runtime_user, ptr @__profd_foo_inline, ptr @__profd_foo_extern, ptr @__profd_foo_private_profn, ptr @__profvinfo_foo_inline, ptr @__profvinfo_foo_extern, ptr @__profvinfo_foo_private_profn]
+; COFF1: @llvm.used = appending global [8 x ptr] [ptr @__llvm_profile_runtime_user, ptr @__profd_foo_inline, ptr @__profd_foo_extern, ptr @__profd_foo_private_profn, ptr @__profvinfo_foo_inline, ptr @__profvinfo_foo_extern, ptr @__profvinfo_foo_private_profn, ptr @__llvm_prf_nm]
 
 ;--- disable.ll
 !llvm.module.flags = !{!0}

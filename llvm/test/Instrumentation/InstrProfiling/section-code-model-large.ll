@@ -27,6 +27,8 @@ attributes #0 = { nounwind }
 ; CHECK-NOT: code_model "large"
 ; CHECK: @__profvp_foo =
 ; CHECK-SAME: code_model "large"
+; CHECK: @__profvinfo_foo =
+; CHECK-SAME: code_model "large"
 ; CHECK: @__profd_foo =
 ; CHECK-NOT: code_model "large"
 ; CHECK: @__llvm_prf_vnodes =

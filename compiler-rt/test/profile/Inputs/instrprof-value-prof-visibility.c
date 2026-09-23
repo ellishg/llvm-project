@@ -9,9 +9,9 @@ int __llvm_profile_runtime = 0;
 int __llvm_profile_write_file();
 void __llvm_profile_reset_counters(void);
 void __llvm_profile_initialize_file(void);
-struct __llvm_profile_data;
 struct ValueProfData;
-void lprofMergeValueProfData(struct ValueProfData *, struct __llvm_profile_data *);
+struct ValueProfInfo;
+void lprofMergeValueProfData(struct ValueProfData *, struct ValueProfInfo *);
 /* Force the vp merger module to be linked in.  */
 void *Dummy = &lprofMergeValueProfData;
 
@@ -36,8 +36,8 @@ int main(int argc, char *argv[]) {
 
   // This tests that lprofMergeValueProfData is not accessed
   // from outside a module
-  void (*SymHandle)(struct ValueProfData *, struct __llvm_profile_data *) =
-      (void (*)(struct ValueProfData *, struct __llvm_profile_data *))dlsym(
+  void (*SymHandle)(struct ValueProfData *, struct ValueProfInfo *) =
+      (void (*)(struct ValueProfData *, struct ValueProfInfo *))dlsym(
           Handle, "lprofMergeValueProfData");
   if (SymHandle) {
     fprintf(stderr,

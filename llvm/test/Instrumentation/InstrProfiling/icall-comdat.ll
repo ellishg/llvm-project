@@ -1,13 +1,13 @@
 ;; Check that static counters are allocated for value profiler
-; RUN: opt < %s -mtriple=x86_64-unknown-linux -passes=instrprof -vp-static-alloc=true -S | FileCheck %s --check-prefix=STATIC
-; RUN: opt < %s -mtriple=powerpc-unknown-linux -passes=instrprof -vp-static-alloc=true -S | FileCheck %s --check-prefix=STATIC
-; RUN: opt < %s -mtriple=sparc-unknown-linux -passes=instrprof -vp-static-alloc=true -S | FileCheck %s --check-prefix=STATIC
-; RUN: opt < %s -mtriple=s390x-unknown-linux -passes=instrprof -vp-static-alloc=true -S | FileCheck %s --check-prefix=STATIC-EXT
-; RUN: opt < %s -mtriple=powerpc64-unknown-linux -passes=instrprof -vp-static-alloc=true -S | FileCheck %s --check-prefix=STATIC-EXT
-; RUN: opt < %s -mtriple=sparc64-unknown-linux -passes=instrprof -vp-static-alloc=true -S | FileCheck %s --check-prefix=STATIC-EXT
-; RUN: opt < %s -mtriple=mips-unknown-linux -passes=instrprof -vp-static-alloc=true -S | FileCheck %s --check-prefix=STATIC-SEXT
-; RUN: opt < %s -mtriple=mips64-unknown-linux -passes=instrprof -vp-static-alloc=true -S | FileCheck %s --check-prefix=STATIC-SEXT
-; RUN: opt < %s -mtriple=x86_64-unknown-linux -passes=instrprof -vp-static-alloc=false -S | FileCheck %s --check-prefix=DYN
+; RUN: opt < %s -mtriple=x86_64-unknown-linux -passes=instrprof -vp-static-alloc=true -S | FileCheck %s --check-prefixes=CHECK,STATIC
+; RUN: opt < %s -mtriple=powerpc-unknown-linux -passes=instrprof -vp-static-alloc=true -S | FileCheck %s --check-prefixes=CHECK,STATIC
+; RUN: opt < %s -mtriple=sparc-unknown-linux -passes=instrprof -vp-static-alloc=true -S | FileCheck %s --check-prefixes=CHECK,STATIC
+; RUN: opt < %s -mtriple=s390x-unknown-linux -passes=instrprof -vp-static-alloc=true -S | FileCheck %s --check-prefixes=CHECK,STATIC-EXT
+; RUN: opt < %s -mtriple=powerpc64-unknown-linux -passes=instrprof -vp-static-alloc=true -S | FileCheck %s --check-prefixes=CHECK,STATIC-EXT
+; RUN: opt < %s -mtriple=sparc64-unknown-linux -passes=instrprof -vp-static-alloc=true -S | FileCheck %s --check-prefixes=CHECK,STATIC-EXT
+; RUN: opt < %s -mtriple=mips-unknown-linux -passes=instrprof -vp-static-alloc=true -S | FileCheck %s --check-prefixes=CHECK,STATIC-SEXT
+; RUN: opt < %s -mtriple=mips64-unknown-linux -passes=instrprof -vp-static-alloc=true -S | FileCheck %s --check-prefixes=CHECK,STATIC-SEXT
+; RUN: opt < %s -mtriple=x86_64-unknown-linux -passes=instrprof -vp-static-alloc=false -S | FileCheck %s --check-prefixes=CHECK,DYN
 
 ;; Check that counters have the correct alignments.
 ; RUN: opt %s -mtriple=powerpc64-unknown-linux -passes=instrprof -S | FileCheck %s --check-prefix=ALIGN
@@ -46,10 +46,25 @@ declare void @llvm.instrprof.value.profile(ptr, i64, i64, i32, i32) #0
 attributes #0 = { nounwind }
 
 ; STATIC: @__profvp_foo = private global [1 x i64] zeroinitializer, section "{{[^"]+}}",{{.*}} comdat($__profc_foo)
+
+; CHECK:      @__profvinfo_foo =
+; STATIC-SAME:  ptr @__profvp_foo
+; DYN-SAME: ptr null
+; CHECK-SAME:   [3 x i16] [i16 1, i16 0, i16 0]
+; CHECK-SAME:   section "__llvm_prf_vinfo"
+
 ; STATIC: @__profvp_bar = private global [1 x i64] zeroinitializer, section "{{[^"]+}}",{{.*}} comdat($__profc_bar)
-; STATIC: @__llvm_prf_vnodes
+
+; CHECK:      @__profvinfo_bar =
+; STATIC-SAME:  ptr @__profvp_bar
+; DYN-SAME: ptr null
+; CHECK-SAME:   [3 x i16] [i16 1, i16 0, i16 0]
+; CHECK-SAME:   section "__llvm_prf_vinfo"
 
 ; DYN-NOT: @__profvp_foo
+; DYN-NOT: @__profvp_bar
+
+; STATIC: @__llvm_prf_vnodes
 ; DYN-NOT: @__llvm_prf_vnodes
 
 ;; __llvm_prf_vnodes and __llvm_prf_nm are not referenced by other metadata sections.
@@ -58,9 +73,9 @@ attributes #0 = { nounwind }
 ; STATIC-SAME:   @__llvm_prf_vnodes
 ; STATIC-SAME:   @__llvm_prf_nm
 
-; STATIC: call void @__llvm_profile_instrument_target(i64 %3, ptr @__profd_foo, i32 0)
-; STATIC-EXT: call void @__llvm_profile_instrument_target(i64 %3, ptr @__profd_foo, i32 zeroext 0)
-; STATIC-SEXT: call void @__llvm_profile_instrument_target(i64 %3, ptr @__profd_foo, i32 signext 0)
+; STATIC: call void @__llvm_profile_instrument_target(i64 %3, ptr @__profvinfo_foo, i32 0)
+; STATIC-EXT: call void @__llvm_profile_instrument_target(i64 %3, ptr @__profvinfo_foo, i32 zeroext 0)
+; STATIC-SEXT: call void @__llvm_profile_instrument_target(i64 %3, ptr @__profvinfo_foo, i32 signext 0)
 
 ; STATIC: declare void @__llvm_profile_instrument_target(i64, ptr, i32)
 ; STATIC-EXT: declare void @__llvm_profile_instrument_target(i64, ptr, i32 zeroext)

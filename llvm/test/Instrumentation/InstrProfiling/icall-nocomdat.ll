@@ -23,10 +23,12 @@ declare void @llvm.instrprof.value.profile(ptr, i64, i64, i32, i32) #0
 
 attributes #0 = { nounwind }
 
-; STATIC: @__profvp_foo = private global [1 x i64] zeroinitializer, section "{{[^"]+}}"
+; STATIC: @__profvp_foo = private global [1 x i64] zeroinitializer, section "__DATA,__llvm_prf_vals"
+; STATIC: @__profvinfo_foo = private global { ptr, [3 x i16] } { ptr @__profvp_foo, [3 x i16] [i16 1, i16 0, i16 0] }, section "__DATA,__llvm_prf_vinfo"
 ; STATIC: @__llvm_prf_vnodes
 
 ; DYN-NOT: @__profvp_foo
+; DYN: @__profvinfo_foo = private global { ptr, [3 x i16] } { ptr null, [3 x i16] [i16 1, i16 0, i16 0] }, section "__llvm_prf_vinfo"
 ; DYN-NOT: @__llvm_prf_vnodes
 
 ;; __llvm_prf_vnodes and __llvm_prf_nm are not referenced by other metadata sections.
@@ -35,9 +37,9 @@ attributes #0 = { nounwind }
 ; STATIC-SAME:   @__llvm_prf_vnodes
 ; STATIC-SAME:   @__llvm_prf_nm
 
-; STATIC: call void @__llvm_profile_instrument_target(i64 %3, ptr @__profd_foo, i32 0)
-; STATIC-EXT: call void @__llvm_profile_instrument_target(i64 %3, ptr @__profd_foo, i32 zeroext 0)
-; STATIC-SEXT: call void @__llvm_profile_instrument_target(i64 %3, ptr @__profd_foo, i32 signext 0)
+; STATIC: call void @__llvm_profile_instrument_target(i64 %3, ptr @__profvinfo_foo, i32 0)
+; STATIC-EXT: call void @__llvm_profile_instrument_target(i64 %3, ptr @__profvinfo_foo, i32 zeroext 0)
+; STATIC-SEXT: call void @__llvm_profile_instrument_target(i64 %3, ptr @__profvinfo_foo, i32 signext 0)
 
 ; STATIC: declare void @__llvm_profile_instrument_target(i64, ptr, i32)
 ; STATIC-EXT: declare void @__llvm_profile_instrument_target(i64, ptr, i32 zeroext)

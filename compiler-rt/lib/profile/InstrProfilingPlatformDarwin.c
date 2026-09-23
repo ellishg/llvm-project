@@ -36,6 +36,12 @@ extern char
 COMPILER_RT_VISIBILITY
 extern char BitmapEnd __asm("section$end$__DATA$" INSTR_PROF_BITS_SECT_NAME);
 COMPILER_RT_VISIBILITY
+extern ValueProfInfo
+    VPInfoStart __asm("section$start$__DATA$" INSTR_PROF_VINFO_SECT_NAME);
+COMPILER_RT_VISIBILITY
+extern ValueProfInfo
+    VPInfoEnd __asm("section$end$__DATA$" INSTR_PROF_VINFO_SECT_NAME);
+COMPILER_RT_VISIBILITY
 extern VTableProfData
     VTableProfStart __asm("section$start$__DATA$" INSTR_PROF_VTAB_SECT_NAME);
 COMPILER_RT_VISIBILITY
@@ -73,6 +79,12 @@ COMPILER_RT_VISIBILITY
 char *__llvm_profile_begin_bitmap(void) { return &BitmapStart; }
 COMPILER_RT_VISIBILITY
 char *__llvm_profile_end_bitmap(void) { return &BitmapEnd; }
+COMPILER_RT_VISIBILITY ValueProfInfo *__llvm_profile_begin_vpinfo(void) {
+  return &VPInfoStart;
+}
+COMPILER_RT_VISIBILITY ValueProfInfo *__llvm_profile_end_vpinfo(void) {
+  return &VPInfoEnd;
+}
 COMPILER_RT_VISIBILITY
 const VTableProfData *__llvm_profile_begin_vtables(void) {
   return &VTableProfStart;

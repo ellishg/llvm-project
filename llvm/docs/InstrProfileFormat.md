@@ -134,9 +134,11 @@ record, in a similar way to how counters are referenced as explained by
 Similar to [CountersDelta](#CountersDelta) field, this field may not be used in non-PGO variants
 of profiles.
 
-**`NamesDelta`**
-Records the in-memory address of name section. Not used except for raw profile
-reader error checking.
+**`ValueInfoDelta`**
+Records the in-memory address difference between the [profile metadata](#profile-metadata)
+and value profile info sections, i.e.,
+`start(__llvm_prf_vinfo) - start(__llvm_prf_data)`. It is used with
+`RelativeValuesPtr` to locate a function's serialized value profile data.
 
 **`NumVTables`**
 Records the number of instrumented vtable entries in the binary. Used for

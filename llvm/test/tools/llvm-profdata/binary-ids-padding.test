@@ -9,7 +9,7 @@
 // INSTR_PROF_RAW_HEADER(uint64_t, NamesSize,  NamesSize)
 // INSTR_PROF_RAW_HEADER(uint64_t, CountersDelta, (uintptr_t)CountersBegin)
 // INSTR_PROF_RAW_HEADER(uint64_t, BitmaskDelta, (uintptr_t)BitmaskBegin)
-// INSTR_PROF_RAW_HEADER(uint64_t, NamesDelta, (uintptr_t)NamesBegin)
+// INSTR_PROF_RAW_HEADER(uint64_t, ValueInfoDelta, (uintptr_t)VPInfoBegin - (uintptr_t)DataBegin)
 // INSTR_PROF_RAW_HEADER(uint64_t, VNamesSize, VNamesSize)
 // INSTR_PROF_RAW_HEADER(uint64_t, NumVTables, NumVTables)
 // INSTR_PROF_RAW_HEADER(uint64_t, ValueKindLast, IPVK_Last)
@@ -21,7 +21,7 @@
 // TODO: use a builtin version of printf
 UNSUPPORTED: system-windows, system-zos
 RUN: printf '\201rforpl\377' > %t.profraw
-RUN: printf '\13\0\0\0\0\0\0\0' >> %t.profraw
+RUN: printf '\14\0\0\0\0\0\0\0' >> %t.profraw
 // There will be 2 20-byte binary IDs, so the total Binary IDs size will be 64 bytes.
 //   2 * 8  binary ID sizes
 // + 2 * 20 binary IDs (of size 20)

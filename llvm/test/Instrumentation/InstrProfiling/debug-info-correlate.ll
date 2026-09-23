@@ -6,24 +6,34 @@
 
 @__profn_foo = private constant [3 x i8] c"foo"
 ; CHECK:      @__profc_foo =
-; CHECK-SAME: !dbg ![[EXPR:[0-9]+]]
+; CHECK-SAME: !dbg ![[PROFC_DBG:[0-9]+]]
 
-; CHECK:      ![[EXPR]] = !DIGlobalVariableExpression(var: ![[GLOBAL:[0-9]+]]
-; CHECK:      ![[GLOBAL]] = {{.*}} !DIGlobalVariable(name: "__profc_foo"
+; CHECK:      @__profvinfo_foo =
+; CHECK-SAME: !dbg ![[VINFO_DBG:[0-9]+]]
+
+; CHECK:      ![[PROFC_DBG]] = !DIGlobalVariableExpression(var: ![[PROFC_GLOBAL:[0-9]+]]
+; CHECK:      ![[PROFC_GLOBAL]] = {{.*}} !DIGlobalVariable(name: "__profc_foo"
 ; CHECK-SAME: scope: ![[SCOPE:[0-9]+]]
 ; CHECK-SAME: annotations: ![[ANNOTATIONS:[0-9]+]]
 ; CHECK:      ![[SCOPE]] = {{.*}} !DISubprogram(name: "foo"
+; CHECK:      ![[VINFO_DBG]] = !DIGlobalVariableExpression(var: ![[VINFO_GLOBAL:[0-9]+]]
+; CHECK:      ![[VINFO_GLOBAL]] = {{.*}} !DIGlobalVariable(name: "__profvinfo_foo"
+; CHECK-SAME: scope: ![[SCOPE]]
 ; CHECK:      ![[ANNOTATIONS]] = !{![[NAME:[0-9]+]], ![[HASH:[0-9]+]], ![[COUNTERS:[0-9]+]]}
 ; CHECK:      ![[NAME]] = !{!"Function Name", !"foo"}
 ; CHECK:      ![[HASH]] = !{!"CFG Hash", i64 12345678}
 ; CHECK:      ![[COUNTERS]] = !{!"Num Counters", i32 2}
 
-define void @_Z3foov() !dbg !12 {
+define void @_Z3foov(ptr %p) !dbg !12 {
   call void @llvm.instrprof.increment(ptr @__profn_foo, i64 12345678, i32 2, i32 0)
+  %p2 = ptrtoint ptr %p to i64
+  call void @llvm.instrprof.value.profile(ptr @__profn_foo, i64 12345678, i64 %p2, i32 0, i32 0)
+  tail call void %p(), !dbg !17
   ret void, !dbg !17
 }
 
 declare void @llvm.instrprof.increment(ptr, i64, i32, i32)
+declare void @llvm.instrprof.value.profile(ptr, i64, i64, i32, i32)
 
 !llvm.dbg.cu = !{!0}
 !llvm.module.flags = !{!2, !3, !4, !5, !6, !7, !8, !9, !10}
@@ -64,6 +74,10 @@ declare void @llvm.instrprof.increment(ptr, i64, i32, i32)
 ; CHECK-DWARF:         DW_AT_name	("Num Counters")
 ; CHECK-DWARF:         DW_AT_const_value	(2)
 ; CHECK-DWARF:       NULL
+; CHECK-DWARF:     DW_TAG_variable
+; CHECK-DWARF:       DW_AT_name	("__profvinfo_foo")
+; CHECK-DWARF:       DW_AT_type	({{.*}} "Value Profile Data Type")
 ; CHECK-DWARF:     NULL
+; CHECK-DWARF:   DW_TAG_unspecified_type
 ; CHECK-DWARF:   DW_TAG_unspecified_type
 ; CHECK-DWARF:   NULL

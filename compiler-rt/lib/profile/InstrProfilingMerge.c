@@ -16,7 +16,7 @@
 #include "profile/InstrProfData.inc"
 
 COMPILER_RT_VISIBILITY
-void (*VPMergeHook)(ValueProfData *, __llvm_profile_data *);
+void (*VPMergeHook)(ValueProfData *, ValueProfInfo *);
 
 COMPILER_RT_VISIBILITY
 uint64_t lprofGetLoadModuleSignature(void) {
@@ -171,14 +171,11 @@ int __llvm_profile_merge_from_buffer(const char *ProfileData,
       SrcCounter += __llvm_profile_counter_entry_size();
       DstCounter += __llvm_profile_counter_entry_size();
     }
-    return 0;
   }
 
   __llvm_profile_data *SrcData, *DstData;
-  uintptr_t SrcValueProfData;
   for (SrcData = SrcDataStart,
-      DstData = (__llvm_profile_data *)__llvm_profile_begin_data(),
-      SrcValueProfData = SrcValueProfDataStart;
+      DstData = (__llvm_profile_data *)__llvm_profile_begin_data();
        SrcData < SrcDataEnd; ++SrcData, ++DstData) {
     // For the in-memory destination, CounterPtr is the distance from the start
     // address of the data to the start address of the counter. On WIN64,
@@ -188,7 +185,6 @@ int __llvm_profile_merge_from_buffer(const char *ProfileData,
         (uintptr_t)DstData + signextIfWin64(DstData->CounterPtr);
     uintptr_t DstBitmap =
         (uintptr_t)DstData + signextIfWin64(DstData->BitmapPtr);
-    unsigned NVK = 0;
 
     // SrcData is a serialized representation of the memory image. We need to
     // compute the in-buffer counter offset from the in-memory address distance.
@@ -231,22 +227,19 @@ int __llvm_profile_merge_from_buffer(const char *ProfileData,
       for (unsigned I = 0; I < NB; I++)
         ((char *)DstBitmap)[I] |= ((const char *)SrcBitmap)[I];
     }
+  }
 
-    /* Now merge value profile data. */
-    if (!VPMergeHook)
-      continue;
+  if (!VPMergeHook ||
+      SrcValueProfDataStart >= (uintptr_t)ProfileData + ProfileSize)
+    return 0;
 
-    for (unsigned I = 0; I <= IPVK_Last; I++)
-      NVK += (SrcData->NumValueSites[I] != 0);
-
-    if (!NVK)
-      continue;
-
+  uintptr_t SrcValueProfData = SrcValueProfDataStart;
+  for (ValueProfInfo *VPInfo = __llvm_profile_begin_vpinfo();
+       VPInfo != __llvm_profile_end_vpinfo(); ++VPInfo) {
     if (SrcValueProfData >= (uintptr_t)ProfileData + ProfileSize)
       return 1;
-    VPMergeHook((ValueProfData *)SrcValueProfData, DstData);
-    SrcValueProfData =
-        SrcValueProfData + ((ValueProfData *)SrcValueProfData)->TotalSize;
+    VPMergeHook((ValueProfData *)SrcValueProfData, VPInfo);
+    SrcValueProfData += ((ValueProfData *)SrcValueProfData)->TotalSize;
   }
 
   return 0;

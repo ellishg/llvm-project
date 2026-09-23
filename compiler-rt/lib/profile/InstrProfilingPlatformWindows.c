@@ -17,6 +17,7 @@
 /* Merge read-write sections into .data. */
 #pragma comment(linker, "/MERGE:.lprfd=.data")
 #pragma comment(linker, "/MERGE:.lprfv=.data")
+#pragma comment(linker, "/MERGE:.lprfi=.data")
 #pragma comment(linker, "/MERGE:.lprfnd=.data")
 /* Do *NOT* merge .lprfn and .lcovmap into .rdata. llvm-cov must be able to find
  * after the fact.
@@ -35,6 +36,10 @@
 #pragma section(".lprfc$Z", read, write)
 #pragma section(".lprfb$A", read, write)
 #pragma section(".lprfb$Z", read, write)
+#pragma section(".lprfv$A", read, write)
+#pragma section(".lprfv$Z", read, write)
+#pragma section(".lprfi$A", read, write)
+#pragma section(".lprfi$Z", read, write)
 #pragma section(".lprfnd$A", read, write)
 #pragma section(".lprfnd$Z", read, write)
 #endif
@@ -57,6 +62,9 @@ char COMPILER_RT_SECTION(".lprfc$A") CountersStart;
 char COMPILER_RT_SECTION(".lprfc$Z") CountersEnd;
 char COMPILER_RT_SECTION(".lprfb$A") BitmapStart;
 char COMPILER_RT_SECTION(".lprfb$Z") BitmapEnd;
+
+ValueProfInfo COMPILER_RT_SECTION(".lprfi$A") VPInfoStart = {0};
+ValueProfInfo COMPILER_RT_SECTION(".lprfi$Z") VPInfoEnd = {0};
 
 ValueProfNode COMPILER_RT_SECTION(".lprfnd$A") VNodesStart;
 ValueProfNode COMPILER_RT_SECTION(".lprfnd$Z") VNodesEnd;
@@ -90,6 +98,9 @@ char *__llvm_profile_begin_counters(void) { return &CountersStart + 1; }
 char *__llvm_profile_end_counters(void) { return &CountersEnd; }
 char *__llvm_profile_begin_bitmap(void) { return &BitmapStart + 1; }
 char *__llvm_profile_end_bitmap(void) { return &BitmapEnd; }
+
+ValueProfInfo *__llvm_profile_begin_vpinfo(void) { return &VPInfoStart + 1; }
+ValueProfInfo *__llvm_profile_end_vpinfo(void) { return &VPInfoEnd; }
 
 ValueProfNode *__llvm_profile_begin_vnodes(void) { return &VNodesStart + 1; }
 ValueProfNode *__llvm_profile_end_vnodes(void) { return &VNodesEnd; }

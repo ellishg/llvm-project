@@ -68,6 +68,9 @@ public:
     return Ctx->CountersSectionEnd - Ctx->CountersSectionStart;
   }
 
+  /// Return the number of ValueProfInfo records in the binary.
+  LLVM_ABI uint64_t getNumValueProfData() const;
+
   LLVM_ABI static const char *FunctionNameAttributeName;
   LLVM_ABI static const char *CFGHashAttributeName;
   LLVM_ABI static const char *NumCountersAttributeName;
@@ -86,6 +89,9 @@ protected:
     /// The address range of the __llvm_prf_cnts section.
     uint64_t CountersSectionStart;
     uint64_t CountersSectionEnd;
+    /// The address range of the __llvm_prf_vinfo section.
+    std::optional<uint64_t> VInfoSectionStart;
+    std::optional<uint64_t> VInfoSectionEnd;
     /// The address range of the __llvm_prf_bits section.
     uint64_t BitmapSectionStart;
     uint64_t BitmapSectionEnd;
@@ -115,6 +121,7 @@ protected:
     std::optional<std::string> LinkageName;
     yaml::Hex64 CFGHash;
     yaml::Hex64 CounterOffset;
+    std::optional<yaml::Hex64> VPInfoOffset;
     yaml::Hex64 BitmapOffset;
     uint32_t NumCounters;
     uint32_t NumBitmapBytes;
@@ -173,7 +180,7 @@ protected:
   void addDataProbe(uint64_t FunctionName, uint64_t CFGHash,
                     IntPtrT CounterOffset, IntPtrT BitmapOffset,
                     IntPtrT FunctionPtr, uint32_t NumCounters,
-                    uint32_t NumBitmapBytes);
+                    IntPtrT VPInfoOffset, uint32_t NumBitmapBytes);
 
   // Byte-swap the value if necessary.
   template <class T> T maybeSwap(T Value) const {
@@ -183,7 +190,7 @@ protected:
 private:
   InstrProfCorrelatorImpl(InstrProfCorrelatorKind Kind,
                           std::unique_ptr<InstrProfCorrelator::Context> Ctx)
-      : InstrProfCorrelator(Kind, std::move(Ctx)){};
+      : InstrProfCorrelator(Kind, std::move(Ctx)) {};
   llvm::DenseSet<IntPtrT> CounterOffsets;
   llvm::DenseSet<IntPtrT> BitmapOffsets;
 };
@@ -212,6 +219,10 @@ private:
   addCountersToDataProbe(const DWARFDie &Die, const bool UnlimitedWarnings,
                          int &NumSuppressedWarnings);
 
+  std::optional<IntPtrT> getVPInfoOffset(const DWARFDie &FnDie,
+                                         const bool UnlimitedWarnings,
+                                         int &NumSuppressedWarnings);
+
   std::optional<std::pair<InstrProfCorrelator::Probe, IntPtrT>>
   addBitmapToDataProbe(const DWARFDie &Die, const bool UnlimitedWarnings,
                        int &NumSuppressedWarnings);
@@ -239,6 +250,10 @@ private:
   ///         DW_AT_name	("Num Counters")
   ///         DW_AT_const_value	(2)
   ///       NULL
+  ///     NULL
+  ///     DW_TAG_variable
+  ///       DW_AT_name	("__profvinfo_foo")
+  ///       DW_AT_location	(DW_OP_addr 0x0)
   ///     NULL
   /// \endcode
   /// \param MaxWarnings the maximum number of warnings to emit (0 = no limit)

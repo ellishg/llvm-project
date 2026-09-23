@@ -21,8 +21,11 @@
  * in-memory profile counters pointed by to DstData.  */
 COMPILER_RT_VISIBILITY
 void lprofMergeValueProfData(ValueProfData *SrcValueProfData,
-                             __llvm_profile_data *DstData) {
+                             ValueProfInfo *DstValueProfInfo) {
   unsigned I, S, V, DstIndex = 0;
+  uintptr_t LoadBias = __llvm_profile_get_version() & VARIANT_MASK_DBG_CORRELATE
+                           ? lprofGetLoadBias()
+                           : 0;
   InstrProfValueData *VData;
   ValueProfRecord *VR = getFirstValueProfRecord(SrcValueProfData);
   for (I = 0; I < SrcValueProfData->NumValueKinds; I++) {
@@ -31,7 +34,10 @@ void lprofMergeValueProfData(ValueProfData *SrcValueProfData,
     for (S = 0; S < VR->NumValueSites; S++) {
       uint8_t NV = VR->SiteCountArray[S];
       for (V = 0; V < NV; V++) {
-        __llvm_profile_instrument_target_value(VData[SrcIndex].Value, DstData,
+        uint64_t Value = VData[SrcIndex].Value;
+        if (VR->Kind == IPVK_IndirectCallTarget)
+          Value += LoadBias;
+        __llvm_profile_instrument_target_value(Value, DstValueProfInfo,
                                                DstIndex, VData[SrcIndex].Count);
         ++SrcIndex;
       }

@@ -1114,7 +1114,7 @@ int __prof_rocm::processDeviceOffloadPrf(
                      0,
                      sizeof(RelocatedData[i].BitmapPtr) +
                          sizeof(RelocatedData[i].FunctionPointer) +
-                         sizeof(RelocatedData[i].Values));
+                         sizeof(RelocatedData[i].RelativeValuesPtr));
   }
 
   ret = __llvm_write_custom_profile(

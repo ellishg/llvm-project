@@ -175,8 +175,8 @@ void __llvm_profile_register_names_function(void *NamesStart,
                                             uint64_t NamesSize) {}
 
 // The __start_SECNAME and __stop_SECNAME symbols (for SECNAME \in
-// {"__llvm_prf_cnts", "__llvm_prf_data", "__llvm_prf_name", "__llvm_prf_vnds",
-// "__llvm_prf_vns", "__llvm_prf_vtab"})
+// {"__llvm_prf_cnts", "__llvm_prf_data", "__llvm_prf_name", "__llvm_prf_vals",
+// "__llvm_prf_vinfo", "__llvm_prf_vnds", "__llvm_prf_vns", "__llvm_prf_vtab"})
 // are always live when linking on AIX, regardless if the .o's being linked
 // reference symbols from the profile library (for example when no files were
 // compiled with -fprofile-generate). That's because these symbols are kept
@@ -192,6 +192,10 @@ static int dummy_bits[0] COMPILER_RT_SECTION(
     COMPILER_RT_SEG INSTR_PROF_BITS_SECT_NAME);
 static int dummy_data[0] COMPILER_RT_SECTION(
     COMPILER_RT_SEG INSTR_PROF_DATA_SECT_NAME);
+static int dummy_vals[0] COMPILER_RT_SECTION(
+    COMPILER_RT_SEG INSTR_PROF_VALS_SECT_NAME);
+static int dummy_vinfo[0] COMPILER_RT_SECTION(
+    COMPILER_RT_SEG INSTR_PROF_VINFO_SECT_NAME);
 static const int dummy_name[0] COMPILER_RT_SECTION(
     COMPILER_RT_SEG INSTR_PROF_NAME_SECT_NAME);
 static int dummy_vnds[0] COMPILER_RT_SECTION(
@@ -212,9 +216,10 @@ static int dummy_covinit_funcs[0] COMPILER_RT_SECTION(
 #endif
 COMPILER_RT_VISIBILITY
 void *__llvm_profile_keep[] = {
-    (void *)&dummy_cnts, (void *)&dummy_bits,         (void *)&dummy_data,
-    (void *)&dummy_name, (void *)&dummy_vnds,         (void *)&dummy_vname,
-    (void *)&dummy_vtab, (void *)&dummy_covinit_funcs};
+    (void *)&dummy_cnts, (void *)&dummy_bits,          (void *)&dummy_data,
+    (void *)&dummy_name, (void *)&dummy_vnds,          (void *)&dummy_vname,
+    (void *)&dummy_vtab, (void *)&dummy_covinit_funcs, (void *)&dummy_vals,
+    (void *)&dummy_vinfo};
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
 #endif

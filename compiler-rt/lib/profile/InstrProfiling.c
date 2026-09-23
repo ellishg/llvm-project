@@ -66,19 +66,15 @@ COMPILER_RT_VISIBILITY void __llvm_profile_reset_counters(void) {
   E = __llvm_profile_end_bitmap();
   memset(I, 0x0, E - I);
 
-  const __llvm_profile_data *DataBegin = __llvm_profile_begin_data();
-  const __llvm_profile_data *DataEnd = __llvm_profile_end_data();
-  const __llvm_profile_data *DI;
-  for (DI = DataBegin; DI < DataEnd; ++DI) {
+  for (const ValueProfInfo *VPInfo = __llvm_profile_begin_vpinfo();
+       VPInfo != __llvm_profile_end_vpinfo(); ++VPInfo) {
     uint64_t CurrentVSiteCount = 0;
     uint32_t VKI, i;
-    if (!DI->Values)
+    ValueProfNode *const *ValueCounters = VPInfo->Values;
+    if (!ValueCounters)
       continue;
-
-    ValueProfNode **ValueCounters = (ValueProfNode **)DI->Values;
-
     for (VKI = IPVK_First; VKI <= IPVK_Last; ++VKI)
-      CurrentVSiteCount += DI->NumValueSites[VKI];
+      CurrentVSiteCount += VPInfo->NumValueSites[VKI];
 
     for (i = 0; i < CurrentVSiteCount; ++i) {
       ValueProfNode *CurrVNode = ValueCounters[i];
