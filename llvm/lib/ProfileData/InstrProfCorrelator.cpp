@@ -122,6 +122,23 @@ InstrProfCorrelator::Context::get(std::unique_ptr<MemoryBuffer> Buffer,
   }
 
   C->ShouldSwapBytes = Obj.isLittleEndian() != sys::IsLittleEndianHost;
+  if (FileKind == InstrProfCorrelator::DEBUG_INFO) {
+    for (const auto &Sym : Obj.symbols()) {
+      auto Type = expectedToOptional(Sym.getType());
+      if (Type != object::SymbolRef::ST_Function)
+        continue;
+      auto Flags = expectedToOptional(Sym.getFlags());
+      if (!Flags || (*Flags & object::SymbolRef::SF_Undefined))
+        continue;
+      auto Name = expectedToOptional(Sym.getName());
+      auto Address = expectedToOptional(Sym.getAddress());
+      if (!Name || !Address)
+        continue;
+      if (ObjFormat == Triple::MachO)
+        Name->consume_front("_");
+      C->SymbolToAddress.try_emplace(*Name, *Address);
+    }
+  }
   return Expected<std::unique_ptr<Context>>(std::move(C));
 }
 
@@ -425,6 +442,12 @@ DwarfInstrProfCorrelator<IntPtrT>::addCountersToDataProbe(
                InstrProfCorrelator::NumCountersAttributeName) {
       NumCounters = AnnotationFormValue->getAsUnsignedConstant();
     }
+  }
+  if (!FunctionPtr) {
+    auto [Prefix, Name] = getParsedIRPGOName(*FunctionName);
+    auto It = this->Ctx->SymbolToAddress.find(Name);
+    if (It != this->Ctx->SymbolToAddress.end())
+      FunctionPtr = It->second;
   }
   // If there is no function and no counter, assume it was dead-stripped
   if (!FunctionPtr && !CounterPtr)

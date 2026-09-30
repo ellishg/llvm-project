@@ -101,6 +101,7 @@ protected:
     llvm::DenseMap<uint64_t, uint64_t> MachOFixups;
     /// True if target and host have different endian orders.
     bool ShouldSwapBytes;
+    llvm::StringMap<uint64_t> SymbolToAddress;
   };
   const std::unique_ptr<Context> Ctx;
 
