@@ -34,9 +34,8 @@ constexpr const char categoryClassMethods[] =
 constexpr const char categoryProtocols[] = "__OBJC_CATEGORY_PROTOCOLS_$_";
 } // namespace symbol_names
 
-// Check for duplicate method names within related categories / classes.
-void checkCategories();
-void mergeCategories();
+// Check for duplicate methods and/or merge categories sharing a base class.
+void processCategories(bool checkConflicts, bool mergeCategories);
 
 void doCleanup();
 } // namespace objc

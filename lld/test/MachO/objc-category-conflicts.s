@@ -36,6 +36,12 @@
 # RUN:   %t/cat1-with-load.o %t/cat2-with-load.o -o /dev/null 2>&1 | \
 # RUN:   FileCheck %s --check-prefixes=CATCLS,CATCAT --implicit-check-not '+load'
 
+## Merging must check methods in +load categories even though they are excluded
+## from merging, including conflicts with categories that can be merged.
+# RUN: %no-fatal-warnings-lld -no_objc_relative_method_lists -objc_category_merging -dylib -lobjc %t/klass-with-load.o \
+# RUN:   %t/cat1-with-load.o %t/cat2-with-load.o -o /dev/null 2>&1 | \
+# RUN:   FileCheck %s --check-prefixes=CATCLS,CATCAT --implicit-check-not '+load'
+
 ## Regression test: Check that we don't crash.
 # RUN: %no-fatal-warnings-lld -no_objc_relative_method_lists --check-category-conflicts -dylib -lobjc %t/klass-with-no-rodata.o -o /dev/null
 
@@ -44,6 +50,104 @@
 # RUN:   /dev/null 2>&1 | FileCheck %s --implicit-check-not 'warning' --allow-empty
 # RUN: %no-fatal-warnings-lld -objc_relative_method_lists --no-check-category-conflicts -dylib -lobjc %t/klass.o %t/cat1.o %t/cat2.o -o \
 # RUN:   /dev/null 2>&1 | FileCheck %s --implicit-check-not 'warning' --allow-empty
+
+## Give all string references symbols so these inputs can actually be merged.
+# RUN: mkdir %t/mergeable %t/unmergeable %t/addends
+# RUN: sed 's/L_OBJC/l_OBJC/g' %t/objc-macros.s > %t/mergeable/objc-macros.s
+# RUN: llvm-mc -filetype=obj -triple=x86_64-apple-macos11.0 -I %t/mergeable %t/klass.s -o %t/klass-mergeable.o
+# RUN: llvm-mc -filetype=obj -triple=x86_64-apple-macos11.0 -I %t/mergeable %t/cat1.s -o %t/cat1-mergeable.o
+# RUN: llvm-mc -filetype=obj -triple=x86_64-apple-macos11.0 -I %t/mergeable %t/cat2.s -o %t/cat2-mergeable.o
+# RUN: %no-fatal-warnings-lld -no_objc_relative_method_lists -objc_category_merging -dylib -lobjc %t/klass-mergeable.o \
+# RUN:   %t/cat1-mergeable.o %t/cat2-mergeable.o -o %t/merged.dylib 2>&1 | \
+# RUN:   FileCheck %s --check-prefixes=CATCLS,CATCAT --implicit-check-not 'merging skipped'
+# RUN: llvm-nm %t/merged.dylib | FileCheck %s --check-prefix=MERGED --implicit-check-not '__OBJC_$_CATEGORY_Foo_'
+
+## Cat1 is excluded by +load while Cat2 is merged into the class. Conflicts
+## involving the excluded category must still be reported.
+# RUN: llvm-mc -filetype=obj -triple=x86_64-apple-macos11.0 -I %t/mergeable %t/cat1.s --defsym MAKE_LOAD_METHOD=1 -o %t/cat1-mergeable-with-load.o
+# RUN: %no-fatal-warnings-lld -no_objc_relative_method_lists -objc_category_merging -dylib -lobjc %t/klass-mergeable.o \
+# RUN:   %t/cat1-mergeable-with-load.o %t/cat2-mergeable.o -o /dev/null 2>&1 | \
+# RUN:   FileCheck %s --check-prefixes=CATCLS,CATCAT --implicit-check-not 'merging skipped'
+
+## Disabling the checker still permits merging. The last checker flag wins.
+# RUN: %lld -no_objc_relative_method_lists -objc_category_merging --no-check-category-conflicts -dylib -lobjc \
+# RUN:   %t/klass-mergeable.o %t/cat1-mergeable.o %t/cat2-mergeable.o -o %t/unchecked.dylib
+# RUN: llvm-nm %t/unchecked.dylib | FileCheck %s --check-prefix=MERGED --implicit-check-not '__OBJC_$_CATEGORY_Foo_'
+# RUN: %lld -no_objc_relative_method_lists -objc_category_merging --check-category-conflicts --no-check-category-conflicts \
+# RUN:   -dylib -lobjc %t/klass-mergeable.o %t/cat1-mergeable.o %t/cat2-mergeable.o -o /dev/null
+# RUN: %no-fatal-warnings-lld -no_objc_relative_method_lists -objc_category_merging --no-check-category-conflicts \
+# RUN:   --check-category-conflicts -dylib -lobjc %t/klass-mergeable.o %t/cat1-mergeable.o %t/cat2-mergeable.o -o /dev/null 2>&1 | \
+# RUN:   FileCheck %s --check-prefixes=CATCLS,CATCAT
+
+## Category names have symbols, but method strings still use section references.
+## The checker must inspect all methods even when their lists cannot be merged.
+# RUN: sed 's/L_OBJC_CLASS_NAME/l_OBJC_CLASS_NAME/g' %t/objc-macros.s > %t/unmergeable/objc-macros.s
+# RUN: llvm-mc -filetype=obj -triple=x86_64-apple-macos11.0 -I %t/unmergeable %t/cat1.s -o %t/cat1-unmergeable.o
+# RUN: llvm-mc -filetype=obj -triple=x86_64-apple-macos11.0 -I %t/unmergeable %t/cat2.s -o %t/cat2-unmergeable.o
+# RUN: %no-fatal-warnings-lld -no_objc_relative_method_lists -objc_category_merging -dylib -lobjc %t/klass-mergeable.o \
+# RUN:   %t/cat1-unmergeable.o %t/cat2-unmergeable.o -o /dev/null 2>&1 | FileCheck %s --check-prefixes=CATCLS,CATCAT,SKIPPED
+
+## Unsupported base-class method strings must prevent merging before the
+## original method lists are erased. Conflict checking must still run.
+# RUN: %no-fatal-warnings-lld -no_objc_relative_method_lists -objc_category_merging -dylib -lobjc %t/klass.o \
+# RUN:   %t/cat1-mergeable.o %t/cat2-mergeable.o -o %t/unmerged-base.dylib 2>&1 | FileCheck %s --check-prefixes=CATCLS,CATCAT,SKIPPED
+# RUN: llvm-nm %t/unmerged-base.dylib | FileCheck %s --check-prefix=UNMERGED_BASE
+# RUN: %no-fatal-warnings-lld -no_objc_relative_method_lists -objc_category_merging --no-check-category-conflicts \
+# RUN:   -dylib -lobjc %t/klass.o %t/cat1-mergeable.o %t/cat2-mergeable.o -o /dev/null 2>&1 | \
+# RUN:   FileCheck %s --check-prefix=SKIPPED --implicit-check-not 'conflicting definitions'
+
+## Nonzero pointer addends must survive merging. Selector diagnostics must
+## use the referenced suffix rather than the whole string.
+# RUN: sed '/\.quad l_OBJC_METH_VAR_NAME_/s/$/+1/' %t/mergeable/objc-macros.s > %t/addends/objc-macros.s
+# RUN: llvm-mc -filetype=obj -triple=x86_64-apple-macos11.0 -I %t/addends %t/cat1.s -o %t/cat1-addend.o
+# RUN: llvm-mc -filetype=obj -triple=x86_64-apple-macos11.0 -I %t/addends %t/cat2.s -o %t/cat2-addend.o
+# RUN: %no-fatal-warnings-lld -no_objc_relative_method_lists -objc_category_merging -dylib -lobjc %t/klass-mergeable.o \
+# RUN:   %t/cat1-addend.o %t/cat2-addend.o -o %t/addends.dylib 2>&1 | FileCheck %s --check-prefix=ADDEND --implicit-check-not 'merging skipped'
+# RUN: llvm-nm %t/addends.dylib | FileCheck %s --check-prefix=MERGED --implicit-check-not '__OBJC_$_CATEGORY_Foo_'
+# RUN: llvm-objdump --macho --objc-meta-data %t/addends.dylib | FileCheck %s --check-prefix=ADDEND_META
+
+## Implementation pointers also need their addends preserved. The nop ensures
+## that the +1 address lies within its function instead of naming the next one.
+# RUN: sed -e '/\.quad "\\impl"/s/$/+1/' -e 's/^    ret$/    nop; ret/' %t/mergeable/objc-macros.s > %t/addends/objc-macros.s
+# RUN: llvm-mc -filetype=obj -triple=x86_64-apple-macos11.0 -I %t/addends %t/cat1.s -o %t/cat1-implementation-addend.o
+# RUN: %no-fatal-warnings-lld -no_objc_relative_method_lists -objc_category_merging -dylib -lobjc %t/klass-mergeable.o \
+# RUN:   %t/cat1-implementation-addend.o -o %t/implementation-addend.dylib 2>&1 | \
+# RUN:   FileCheck %s --check-prefix=CATCLS --implicit-check-not 'merging skipped'
+# RUN: llvm-nm -n %t/implementation-addend.dylib > %t/implementation-addend.out
+# RUN: llvm-objdump --macho --objc-meta-data %t/implementation-addend.dylib >> %t/implementation-addend.out
+# RUN: FileCheck %s --check-prefix=IMPL_ADDEND < %t/implementation-addend.out
+
+## Missing metaclass metadata prevents merging, but instance and category methods
+## must still be checked.
+# RUN: sed 's/\.quad _OBJC_METACLASS_\$_Foo/.quad 0/' %t/klass.s > %t/klass-no-meta.s
+# RUN: llvm-mc -filetype=obj -triple=x86_64-apple-macos11.0 -I %t/mergeable %t/klass-no-meta.s -o %t/klass-no-meta.o
+# RUN: %no-fatal-warnings-lld -no_objc_relative_method_lists -objc_category_merging -dylib -lobjc %t/klass-no-meta.o \
+# RUN:   %t/cat1-mergeable.o %t/cat2-mergeable.o -o /dev/null 2>&1 | FileCheck %s --check-prefixes=CATCLS_INSTANCE,CATCAT,SKIPPED
+
+# MERGED-DAG: __OBJC_$_INSTANCE_METHODS_Foo(Cat1|Cat2)
+# MERGED-DAG: __OBJC_$_CATEGORY_CLASS_METHODS_Foo(Cat1|Cat2)
+# UNMERGED_BASE-DAG: __OBJC_$_CLASS_METHODS_Foo
+# UNMERGED_BASE-DAG: __OBJC_$_INSTANCE_METHODS_Foo
+# UNMERGED_BASE-DAG: __OBJC_$_CATEGORY_Foo_$_Cat1
+# UNMERGED_BASE-DAG: __OBJC_$_CATEGORY_Foo_$_Cat2
+# ADDEND_META: baseMethods
+# ADDEND_META-NEXT: entsize 24
+# ADDEND_META-NEXT: count 4
+# ADDEND_META: name {{.*}} 1
+# ADDEND_META: name {{.*}} 2
+# ADDEND_META: name {{.*}} 2
+# ADDEND_META: name {{.*}} m1
+# IMPL_ADDEND: [[#%x,IMPL:]] t -[Foo(Cat1) m1]
+# IMPL_ADDEND: imp 0x[[#%x,IMPL+1]]
+# ADDEND: warning: method '+2' has conflicting definitions:
+# ADDEND-NEXT: >>> defined in category Cat2 from {{.*}}cat2-addend.o
+# ADDEND-NEXT: >>> defined in category Cat1 from {{.*}}cat1-addend.o
+# ADDEND: warning: method '-2' has conflicting definitions:
+# ADDEND-NEXT: >>> defined in category Cat2 from {{.*}}cat2-addend.o
+# ADDEND-NEXT: >>> defined in category Cat1 from {{.*}}cat1-addend.o
+# CATCLS_INSTANCE: warning: method '-m1' has conflicting definitions:
+# CATCLS_INSTANCE-NEXT: >>> defined in category Cat1 from {{.*}}cat1-mergeable.o
+# CATCLS_INSTANCE-NEXT: >>> defined in class Foo from {{.*}}klass-no-meta.o
 
 # CATCLS:      warning: method '+s1' has conflicting definitions:
 # CATCLS-NEXT: >>> defined in category Cat1 from {{.*}}cat1{{.*}}.o
@@ -61,6 +165,8 @@
 # CATCAT-NEXT: >>> defined in category Cat2 from {{.*}}cat2{{.*}}.o
 # CATCAT-NEXT: >>> defined in category Cat1 from {{.*}}cat1{{.*}}.o
 
+
+# SKIPPED: warning: ObjC category merging skipped for class symbol' _OBJC_CLASS_$_Foo'
 
 # CATCLS_W_SYM:      warning: method '+s1' has conflicting definitions:
 # CATCLS_W_SYM-NEXT: >>> defined in category Cat1 from {{.*}}cat1_w_sym{{.*}}.o ({{.*}}cat1.s{{.*}})

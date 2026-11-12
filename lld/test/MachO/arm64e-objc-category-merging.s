@@ -15,6 +15,17 @@
 # RUN: llvm-objdump --macho --dyld-info %t/cats.dylib >> %t/out
 # RUN: FileCheck %s < %t/out
 
+## Unsupported merging must still check conflicts, unless explicitly disabled.
+# RUN: sed 's/cat02_InstanceMethod/cat01_InstanceMethod/g' %t/cats.s > %t/conflicts.s
+# RUN: llvm-mc -filetype=obj -triple=arm64e-apple-macos -o %t/conflicts.o %t/conflicts.s
+# RUN: %no-fatal-warnings-lld -arch arm64e -platform_version macos 13.0 13.0 -dylib \
+# RUN:   -objc_category_merging %t/libbase.dylib %t/conflicts.o -o /dev/null 2>&1 | \
+# RUN:   FileCheck %s --check-prefixes=CONFLICT,WARN
+# RUN: %no-fatal-warnings-lld -arch arm64e -platform_version macos 13.0 13.0 -dylib \
+# RUN:   -objc_category_merging --no-check-category-conflicts %t/libbase.dylib %t/conflicts.o -o /dev/null 2>&1 | \
+# RUN:   FileCheck %s --check-prefix=WARN --implicit-check-not 'conflicting definitions'
+
+# CONFLICT: warning: method '-cat01_InstanceMethod' has conflicting definitions:
 # WARN: warning: -objc_category_merging is not supported on arm64e, ignoring
 
 ## Both categories are still listed, and each keeps its signed method list

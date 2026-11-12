@@ -2577,22 +2577,23 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
     bool mergeCategories = args.hasFlag(OPT_objc_category_merging,
                                         OPT_no_objc_category_merging, false);
 
+    bool checkCategoryConflicts =
+        args.hasFlag(OPT_check_category_conflicts,
+                     OPT_no_check_category_conflicts, mergeCategories);
+    // FIXME: Merge arm64e categories too, as ld64 does by default. Merging
+    // doesn't preserve the signing schemas in arm64e category data yet.
+    bool unsupportedCategoryMerging =
+        mergeCategories && config->arch() == AK_arm64e;
+
     // Categories are not subject to dead-strip. The __objc_catlist section is
     // marked as NO_DEAD_STRIP and that propagates into all category data.
-    if (args.hasFlag(OPT_check_category_conflicts,
-                     OPT_no_check_category_conflicts, mergeCategories))
-      objc::checkCategories();
-
-    // Category merging uses "->live = false" to erase old category data, so
-    // it has to run after dead-stripping (markLive).
-    if (mergeCategories) {
-      // FIXME: Merge arm64e categories too, as ld64 does by default. Merging
-      // doesn't preserve the signing schemas in arm64e category data yet.
-      if (config->arch() == AK_arm64e)
-        warn("-objc_category_merging is not supported on arm64e, ignoring");
-      else
-        objc::mergeCategories();
-    }
+    // Merging uses "->live = false" to erase old category data, so category
+    // processing must run after dead-stripping (markLive).
+    mergeCategories = mergeCategories && !unsupportedCategoryMerging;
+    if (checkCategoryConflicts || mergeCategories)
+      objc::processCategories(checkCategoryConflicts, mergeCategories);
+    if (unsupportedCategoryMerging)
+      warn("-objc_category_merging is not supported on arm64e, ignoring");
 
     computeColdness();
 
